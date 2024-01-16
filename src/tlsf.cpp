@@ -17,8 +17,20 @@ struct TLSFBlockHeader {
 
 #define BLOCK_HEADER_LENGTH offsetof(TLSFBlockHeader, next_free)
 
-// Contains first- and second-level index to TLSF segregated lists.
+// Contains first- and second-level index to segregated lists.
 struct TLSFMapping { uint32_t fl, sl; };
+
+#ifndef NODEBUG
+
+static void print_binary(uint32_t value) {
+    for (int i = 31; i >= 0; --i) {
+        std::cout << ((value >> i) & 1);
+        if (i % 4 == 0) std::cout << ' ';
+    }
+    std::cout << std::endl;
+}
+
+#endif
 
 TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
   TLSF *tlsf = reinterpret_cast<TLSF *>(initial_pool);
@@ -39,7 +51,7 @@ TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
   TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(initial_pool + sizeof(TLSF));
   blk->size = pool_size - sizeof(TLSF) - BLOCK_HEADER_LENGTH;
   blk->prev_phys_block = nullptr;
-  insert_block(blk);
+  tlsf->insert_block(blk);
 
   return tlsf;
 }
@@ -54,6 +66,10 @@ static TLSFMapping mapping(size_t size) {
 
 void TLSF::destroy() {}
 
+void *TLSF::allocate(size_t bytes) { return malloc(bytes); }
+
+void TLSF::free(void *address) { (void)address; }
+
 void TLSF::insert_block(TLSFBlockHeader *blk) {
     TLSFMapping m = mapping(blk->size);
 
@@ -62,7 +78,7 @@ void TLSF::insert_block(TLSFBlockHeader *blk) {
     // TODO: Insert block into free list
     if(head == nullptr) {
         // Free-list emtpy, insert block as new head.
-        _blocks[m.fl][m.sl] = blk;
+        //_blocks[m.fl][m.sl] = blk;
     } else {
         // Free-list not emtpy, insert block before(?) current head and redirect head-> prev to new block.
     }
@@ -79,4 +95,7 @@ int main() {
     TLSFMapping m = mapping(460);
     std::cout << m.fl << ", " << m .sl << std::endl;
     std::cout << "Header length: " << BLOCK_HEADER_LENGTH << std::endl;
+
+    void *pool = calloc(1, 1024 * 10);
+    TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 10);
 }

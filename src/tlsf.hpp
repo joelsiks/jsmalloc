@@ -17,7 +17,7 @@ struct TLSFBlockHeader;
 
 class TLSF {
 public:
-  TLSF *create(uintptr_t initial_pool, size_t pool_size);
+  static TLSF *create(uintptr_t initial_pool, size_t pool_size);
   void destroy();
 
   void *allocate(size_t bytes);
