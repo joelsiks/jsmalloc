@@ -1,6 +1,4 @@
 
-#include <cstdlib>
-
 #include "tlsf.hpp"
 
 // Default value for the minimum block size.
@@ -16,11 +14,13 @@ struct TLSFBlockHeader {
   TLSFBlockHeader *prev_free;
 };
 
-TLSF::TLSF(size_t pool_size, size_t SLI, size_t MBS) {
-  // TODO: pool_size should be a nice number.
+TLSF *TLSF::create(uintptr_t mempool, size_t pool_size, size_t SLI, size_t MBS) {
+  TLSF *tlsf = reinterpret_cast<TLSF *>(mempool);
 
-  // Allocate memory for the initial block.
-  m_mempool = (uintptr_t)calloc(1, pool_size);
+  tlsf->_mempool = mempool;
+  tlsf->_pool_size = pool_size;
+
+  return tlsf;
 }
 
-TLSF::~TLSF() { free((void *)m_mempool); }
+void TLSF::destroy() {}
