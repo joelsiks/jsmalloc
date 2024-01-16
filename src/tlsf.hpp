@@ -7,20 +7,27 @@
 #include <cstddef>
 #include <cstdint>
 
-#define FL_INDEX      32
-#define SL_INDEX_LOG2 5
+// TLSF Structure Parameters (FLI, SLI & MBS)
+#define FL_INDEX       32
+#define SL_INDEX_LOG2  4
+#define SL_INDEX       (1 << SL_INDEX_LOG2)
+#define MIN_BLOCK_SIZE 16
 
 struct TLSFBlockHeader;
 
 class TLSF {
 public:
-  TLSF *create(uintptr_t mempool, size_t pool_size, size_t SLI, size_t MBS);
+  TLSF *create(uintptr_t initial_pool, size_t pool_size);
   void destroy();
 
   void *allocate(size_t bytes);
   void free(void *address);
 
 private:
+  void insert_block(TLSFBlockHeader *blk);
+  void find_block(size_t bytes);
+  void coalesce_blocks(); // TODO
+
   uintptr_t _mempool;
   size_t _pool_size;
 

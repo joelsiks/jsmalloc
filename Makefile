@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Werror -Wextra -std=c++14
+CXXFLAGS = -Wall -Wextra -std=c++14
 
 # Directories
 SRC_DIR = src
@@ -8,7 +8,7 @@ BUILD_DIR = build
 # Files
 SRC_FILES = $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_FILES = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(SRC_FILES))
-TEST_FILE = test_program
+TEST_FILE = test
 
 # Targets
 all: prep $(OBJ_FILES)
@@ -16,9 +16,7 @@ all: prep $(OBJ_FILES)
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-test: $(TEST_FILE)
-
-$(TEST_FILE): $(OBJ_FILES) $(TEST_FILE).cpp
+test: $(OBJ_FILES)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 prep:
