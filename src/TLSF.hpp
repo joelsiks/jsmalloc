@@ -11,7 +11,7 @@
 #define FL_INDEX       32
 #define SL_INDEX_LOG2  4
 #define SL_INDEX       (1 << SL_INDEX_LOG2)
-#define MIN_BLOCK_SIZE 16
+#define MIN_BLOCK_SIZE 32
 
 #define ALIGN_SIZE 8
 
@@ -26,17 +26,24 @@ public:
   void *allocate(size_t size);
   void free(void *address);
 
+  // TODO: Should be removed.
+  void print_phys_blocks();
+
   // TODO: Should probably be private
   static TLSFMapping get_mapping(size_t size);
+  TLSFBlockHeader *find_block(size_t size);
 private:
   void insert_block(TLSFBlockHeader *blk);
 
   // If blk is not nullptr, blk is removed, otherwise the head of the free-list
   // corresponding to mapping is removed.
-  void *remove_block(TLSFBlockHeader *blk, TLSFMapping mapping);
+  TLSFBlockHeader *remove_block(TLSFBlockHeader *blk, TLSFMapping mapping);
 
-  void *find_block(size_t size);
-  void coalesce_blocks(); // TODO
+  // size is the number of bytes that should remain in blk. blk is shrinked to
+  // size and a new block with the remaining blk->size - size is returned.
+  TLSFBlockHeader *split_block(TLSFBlockHeader *blk, size_t size);
+
+  TLSFBlockHeader *get_next_phys_block(TLSFBlockHeader *blk);
 
   uintptr_t _mempool;
   size_t _pool_size;

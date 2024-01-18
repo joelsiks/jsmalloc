@@ -14,10 +14,10 @@ TEST_FILE = test
 all: prep $(OBJ_FILES)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) -g $(CXXFLAGS) -c $< -o $@
 
 test: $(OBJ_FILES)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) -g $(CXXFLAGS) $^ -o $@
 
 prep:
 	mkdir -p $(BUILD_DIR)
