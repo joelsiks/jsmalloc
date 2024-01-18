@@ -24,7 +24,6 @@ struct TLSFBlockHeader {
 struct TLSFMapping { uint32_t fl, sl; };
 
 #ifndef NODEBUG
-
 static void print_blk(TLSFBlockHeader *blk) {
   std::cout << "Block (@ " << blk << ")\n" 
             << " size=" << blk->size << "\n"
@@ -82,9 +81,35 @@ TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
 
 void TLSF::destroy() {}
 
-void *TLSF::allocate(size_t size) { return nullptr; }
+void *TLSF::allocate(size_t size) {
+  TLSFBlockHeader *blk = find_block(size);
 
-void TLSF::free(void *address) { (void)address; }
+  if(blk == nullptr) {
+    return nullptr;
+  } 
+
+  // TODO: Check alignment
+  return (void *)((uintptr_t)blk + BLOCK_HEADER_LENGTH);
+}
+
+void TLSF::free(void *address) {
+  TLSFBlockHeader *blk = (TLSFBlockHeader *)((uintptr_t)address - BLOCK_HEADER_LENGTH);
+
+  // Try to merge with adjacent blocks.
+  // TODO: Need to check if they are free using their free bits.
+  TLSFBlockHeader *prev_blk = blk->prev_phys_block;
+  TLSFBlockHeader *next_blk = get_next_phys_block(blk);
+
+  if(prev_blk != nullptr) { // && free bit is set
+    blk = coalesce_blocks(prev_blk, blk);
+  }
+
+  if(next_blk != nullptr) { // && free bit is set
+    blk = coalesce_blocks(blk, next_blk);
+  }
+
+  insert_block(blk);
+}
 
 void TLSF::print_phys_blocks() {
   TLSFBlockHeader *current = (TLSFBlockHeader *)TLSFUtil::align_up(_mempool + sizeof(TLSF), ALIGN_SIZE);
@@ -111,6 +136,18 @@ void TLSF::insert_block(TLSFBlockHeader *blk) {
   // Indicate that the list has free blocks by updating bitmap.
   _fl_bitmap |= (1 << m.fl);
   _sl_bitmap[m.fl] |= (1 << m.sl);
+}
+
+TLSFBlockHeader *TLSF::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBlockHeader *blk2) {
+  // TODO: Implement
+
+  // Make sure both blocks are marked as free.
+
+  // Combine the blocks by adding the size of blk2 to block1 and also the block header size.
+
+  // Mark the block as free.
+
+  return nullptr;
 }
 
 TLSFBlockHeader *TLSF::remove_block(TLSFBlockHeader *blk, TLSFMapping mapping) {
@@ -201,7 +238,6 @@ TLSFBlockHeader *TLSF::find_block(size_t size) {
   // By now we now that we have an available block to use.
   TLSFBlockHeader *blk = remove_block(nullptr, mapping);
 
-  // TODO: This should be part of the allocate function, not find_block.
   // If the block is larger than some threshold relative to the requested size
   // it should be split up to minimize internal fragmentation.
   if((blk->size - aligned_size) >= (MIN_BLOCK_SIZE + BLOCK_HEADER_LENGTH)) {
@@ -228,11 +264,8 @@ int main() {
   TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 10);
 
   TLSFBlockHeader *blk = tl->find_block(129);
-  std::cout << "------\n";
   blk = tl->find_block(330);
-
   std::cout << sizeof(TLSFBlockHeader) << std::endl;
-
   tl->print_phys_blocks();
 }
 

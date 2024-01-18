@@ -35,6 +35,9 @@ public:
 private:
   void insert_block(TLSFBlockHeader *blk);
 
+  // Coalesces two blocks into one and returns a pointer to the coalesced block.
+  TLSFBlockHeader *coalesce_blocks(TLSFBlockHeader *blk1, TLSFBlockHeader *blk2);
+
   // If blk is not nullptr, blk is removed, otherwise the head of the free-list
   // corresponding to mapping is removed.
   TLSFBlockHeader *remove_block(TLSFBlockHeader *blk, TLSFMapping mapping);
