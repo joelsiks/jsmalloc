@@ -11,13 +11,9 @@ The implementation is written in C++14 for 64-bit machines exclusively and uses 
 
 ## TODO
 
-Implement free/last bits inside block length.
-
-Implement some helper functions for masking out the F/T bits from the size to get the actual size of blocks.
-
 Check alignment when in allocate()
 
-Implement coalesce_blocks()
+Redefine "#DEFINE"s as consts instead.
 
 ## Author
 Joel Sikström

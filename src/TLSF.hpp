@@ -15,8 +15,34 @@
 
 #define ALIGN_SIZE 8
 
-struct TLSFBlockHeader;
+#define BLOCK_HEADER_LENGTH offsetof(TLSFBlockHeader, next)
+
+#define BLOCK_LENGTH_MAX (1 << FL_INDEX)
+
 struct TLSFMapping;
+
+class TLSFBlockHeader {
+public:
+  size_t get_size();
+
+  bool is_free();
+  bool is_last();
+
+  void mark_free();
+  void mark_used();
+
+  void mark_last();
+  void unmark_last();
+
+  size_t size;
+
+  TLSFBlockHeader *prev_phys_block;
+
+  // next and prev are only used in free (unused) blocks.
+  TLSFBlockHeader *next;
+  TLSFBlockHeader *prev;
+};
+
 
 class TLSF {
 public:
@@ -29,11 +55,12 @@ public:
   // TODO: Should be removed.
   void print_phys_blocks();
 
-  // TODO: Should probably be private
-  static TLSFMapping get_mapping(size_t size);
-  TLSFBlockHeader *find_block(size_t size);
 private:
+  static TLSFMapping get_mapping(size_t size);
+
   void insert_block(TLSFBlockHeader *blk);
+
+  TLSFBlockHeader *find_block(size_t size);
 
   // Coalesces two blocks into one and returns a pointer to the coalesced block.
   TLSFBlockHeader *coalesce_blocks(TLSFBlockHeader *blk1, TLSFBlockHeader *blk2);
