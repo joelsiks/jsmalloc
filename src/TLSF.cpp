@@ -20,6 +20,9 @@ struct TLSFBlockHeader {
 
 #define BLOCK_HEADER_LENGTH offsetof(TLSFBlockHeader, next)
 
+#define BLOCK_FREE_MASK 1 << 0
+#define BLOCK__MASK 1 << 1
+
 // Contains first- and second-level index to segregated lists.
 struct TLSFMapping { uint32_t fl, sl; };
 
@@ -213,6 +216,7 @@ TLSFBlockHeader *TLSF::get_next_phys_block(TLSFBlockHeader *blk) {
 
 TLSFBlockHeader *TLSF::find_block(size_t size) {
   // Round up to MIN_BLOCK_SIZE and then to the nearest size class.
+  // TODO: Should not exceed the _fl_bitmap size.
   size_t aligned_size = TLSFUtil::align_up(size, MIN_BLOCK_SIZE);
   size_t target_size = aligned_size + (1 << (TLSFUtil::ilog2(aligned_size) - SL_INDEX_LOG2)) - 1;
 
