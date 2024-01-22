@@ -16,8 +16,8 @@ all: prep $(OBJ_FILES)
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) -g $(CXXFLAGS) -c $< -o $@
 
-test: $(OBJ_FILES)
-	$(CXX) -g $(CXXFLAGS) $^ -o $@
+test: prep $(OBJ_FILES)
+	$(CXX) -g $(CXXFLAGS) $(OBJ_FILES) -o $@
 
 prep:
 	mkdir -p $(BUILD_DIR)

@@ -13,7 +13,5 @@ The implementation is written in C++14 for 64-bit machines exclusively and uses 
 
 Check alignment when in allocate()
 
-Redefine "#DEFINE"s as consts instead.
-
 ## Author
 Joel Sikström
