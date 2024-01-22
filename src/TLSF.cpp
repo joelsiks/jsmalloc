@@ -15,7 +15,9 @@ struct TLSFMapping { uint32_t fl, sl; };
 static void print_blk(TLSFBlockHeader *blk) {
   std::cout << "Block (@ " << blk << ")\n" 
             << " size=" << blk->get_size() << "\n"
-            << " prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n";
+            << " prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n"
+            << " free=" << blk->is_free() << "\n"
+            << " last=" << blk->is_last() << "\n";
 }
 
 static void print_mapping(TLSFMapping m) {
@@ -61,9 +63,9 @@ void TLSFBlockHeader::unmark_last() {
 
 TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
   // Check that the initial_pool is aligned
-  if(!TLSFUtil::is_aligned(initial_pool, _alignment)) {
-    return nullptr;
-  }
+  //if(!TLSFUtil::is_aligned(initial_pool, _alignment)) {
+    //return nullptr;
+  //}
 
   TLSF *tlsf = reinterpret_cast<TLSF *>(initial_pool);
 
@@ -297,22 +299,22 @@ TLSFMapping TLSF::get_mapping(size_t size) {
   return {fl, sl};
 }
 
+/*
 int main() {
-  void *pool = calloc(1, 1024 * 10);
-  TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 10);
+  uint8_t pool[1000 * 1024];
+  TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 1000);
 
   void *a = tl->allocate(3000000000000);
-  a = tl->allocate(32);
-  a = tl->allocate(32);
-  a = tl->allocate(32);
-  a = tl->allocate(35);
-  a = tl->allocate(18);
+  a = tl->allocate(72704);
+  void *b = tl->allocate(128);
+  a = tl->allocate(1024);
+  a = tl->allocate(9488880);
 
   tl->print_phys_blocks();
 
-  a = tl->allocate(32);
-  tl->free(a);
+  tl->free(b);
 
   std::cout << sizeof(TLSFBlockHeader) << std::endl;
   std::cout << BLOCK_HEADER_LENGTH << std::endl;
 }
+*/

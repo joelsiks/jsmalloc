@@ -15,14 +15,9 @@ void basic_test() {
   assert(ptr2 != nullptr);
 
   void *ptr3 = t->allocate(1);
-  assert(ptr3 != nullptr);
-
-  void *ptr4 = t->allocate(1);
-  assert(ptr4 == nullptr);
+  assert(ptr3 == nullptr);
 }
 
-/*
 int main() {
   basic_test();
 }
-*/

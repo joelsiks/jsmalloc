@@ -13,8 +13,8 @@ struct TLSFMapping;
 
 class TLSFBlockHeader {
 private:
-  static const size_t _BlockFreeMask = 0;
-  static const size_t _BlockLastMask = 1;
+  static const size_t _BlockFreeMask = 1;
+  static const size_t _BlockLastMask = 1 << 1;
 
 public:
   size_t size;

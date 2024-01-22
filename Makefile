@@ -8,16 +8,21 @@ BUILD_DIR = build
 # Files
 SRC_FILES = $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_FILES = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(SRC_FILES))
-TEST_FILE = test
+TEST_OBJ_FILES = $(filter-out $(BUILD_DIR)/TLSFMalloc.o, $(OBJ_FILES))
+LIB_OBJ_FILES = $(filter-out $(BUILD_DIR)/test.o, $(TEST_OBJ_FILES))
+SHARED_LIB = libtlsf.so
 
 # Targets
-all: prep $(OBJ_FILES)
+all: prep $(LIB_OBJ_FILES)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
-	$(CXX) -g $(CXXFLAGS) -c $< -o $@
+	$(CXX) -g $(CXXFLAGS) -fPIC -c $< -o $@
 
-test: prep $(OBJ_FILES)
-	$(CXX) -g $(CXXFLAGS) $(OBJ_FILES) -o $@
+test: prep $(TEST_OBJ_FILES)
+	$(CXX) -g $(CXXFLAGS) $(TEST_OBJ_FILES) -o test
+
+sharedlib: prep $(OBJ_FILES)
+	$(CXX) -g -shared -o $(SHARED_LIB) $(OBJ_FILES)
 
 prep:
 	mkdir -p $(BUILD_DIR)
@@ -28,4 +33,5 @@ format:
 	xargs clang-format --style=file -i 
 
 clean:
-	rm -rf $(BUILD_DIR) $(TEST_FILE)
+	rm -rf $(BUILD_DIR) test $(SHARED_LIB)
+
