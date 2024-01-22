@@ -9,9 +9,14 @@ Proceedings. 16th Euromicro Conference on Real-Time Systems, 2004. ECRTS 2004., 
 
 The implementation is written in C++14 for 64-bit machines exclusively and uses some compiler intrinsics (`__builtin_ffsl`, `__builtin_clzl`).
 
-## TODO
+## Real-World Testing
 
-Check alignment when in allocate()
+To easily test the allocator in practice using real-world programs we have provided a wrapper around malloc/calloc and free (no realloc, strdup, etc..).
+To compile a shared library which can be preloaded when running a program, run:
+```bash
+make sharedlib # Produces a file called libtlsf.so
+LD_PRELOAD=./libtlsf.so ./<some program>
+```
 
 ## Author
 Joel Sikström

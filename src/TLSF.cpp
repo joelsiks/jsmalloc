@@ -16,8 +16,7 @@ static void print_blk(TLSFBlockHeader *blk) {
   std::cout << "Block (@ " << blk << ")\n" 
             << " size=" << blk->get_size() << "\n"
             << " prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n"
-            << " free=" << blk->is_free() << "\n"
-            << " last=" << blk->is_last() << "\n";
+            << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << "\n";
 }
 
 static void print_mapping(TLSFMapping m) {
@@ -298,23 +297,3 @@ TLSFMapping TLSF::get_mapping(size_t size) {
   uint32_t sl = (size - fl2) * _sl_index / fl2;
   return {fl, sl};
 }
-
-/*
-int main() {
-  uint8_t pool[1000 * 1024];
-  TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 1000);
-
-  void *a = tl->allocate(3000000000000);
-  a = tl->allocate(72704);
-  void *b = tl->allocate(128);
-  a = tl->allocate(1024);
-  a = tl->allocate(9488880);
-
-  tl->print_phys_blocks();
-
-  tl->free(b);
-
-  std::cout << sizeof(TLSFBlockHeader) << std::endl;
-  std::cout << BLOCK_HEADER_LENGTH << std::endl;
-}
-*/

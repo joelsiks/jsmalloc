@@ -1,5 +1,6 @@
 
 #include <assert.h>
+#include <iostream>
 
 #include "TLSF.hpp"
 
@@ -20,4 +21,20 @@ void basic_test() {
 
 int main() {
   basic_test();
+
+  uint8_t pool[1000 * 1024];
+  TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 1000);
+
+  void *a = tl->allocate(3000000000000);
+  a = tl->allocate(72704);
+  void *b = tl->allocate(128);
+  a = tl->allocate(1024);
+  a = tl->allocate(9488880);
+
+  tl->print_phys_blocks();
+
+  tl->free(b);
+
+  std::cout << sizeof(TLSFBlockHeader) << std::endl;
+  std::cout << BLOCK_HEADER_LENGTH << std::endl;
 }
