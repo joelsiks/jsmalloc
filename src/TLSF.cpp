@@ -30,6 +30,14 @@ static void print_binary(uint32_t value) {
   }
   std::cout << std::endl;
 }
+
+static void print_binary(uint64_t value) {
+  for (int i = 63; i >= 0; --i) {
+    std::cout << ((value >> i) & 1);
+    if (i % 4 == 0) std::cout << ' ';
+  }
+  std::cout << std::endl;
+}
 #endif
 
 size_t TLSFBlockHeader::get_size() {
@@ -70,13 +78,10 @@ TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
 
   tlsf->_mempool = initial_pool;
 
-  // Initialize bitmaps and blocks
-  tlsf->_fl_bitmap = 0;
-  for(int i = 0; i < _fl_index; i++) {
-    tlsf->_sl_bitmap[i] = 0;
-    for(int j = 0; j < _sl_index; j++) {
-      tlsf->_blocks[i][j] = nullptr;
-    }
+  // Initialize bitmap and blocks
+  tlsf->_flatmap = 0;
+  for(int i = 0; i < _num_lists; i++) {
+    tlsf->_blocks[i] = nullptr;
   }
 
   uintptr_t aligned_initial_block = TLSFUtil::align_up(initial_pool + sizeof(TLSF), _alignment);
@@ -140,10 +145,14 @@ void TLSF::print_phys_blocks() {
   }
 }
 
-void TLSF::insert_block(TLSFBlockHeader *blk) {
-  TLSFMapping m = get_mapping(blk->get_size());
+void TLSF::print_flatmap() {
+  print_binary(_flatmap);
+}
 
-  TLSFBlockHeader *head = _blocks[m.fl][m.sl];
+void TLSF::insert_block(TLSFBlockHeader *blk) {
+  uint32_t mapping = get_mapping(blk->get_size());
+
+  TLSFBlockHeader *head = _blocks[mapping];
 
   // Insert the block into its corresponding free-list
   if(head != nullptr) {
@@ -151,14 +160,13 @@ void TLSF::insert_block(TLSFBlockHeader *blk) {
   }
   blk->next = head;
   blk->prev = nullptr;
-  _blocks[m.fl][m.sl] = blk;
+  _blocks[mapping] = blk;
 
   // Mark the block as free
   blk->mark_free();
 
   // Indicate that the list has free blocks by updating bitmap
-  _fl_bitmap |= (1 << m.fl);
-  _sl_bitmap[m.fl] |= (1 << m.sl);
+  _flatmap |= (1 << mapping);
 }
 
 TLSFBlockHeader *TLSF::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBlockHeader *blk2) {
@@ -185,11 +193,11 @@ TLSFBlockHeader *TLSF::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBlockHeader *b
   return blk1;
 }
 
-TLSFBlockHeader *TLSF::remove_block(TLSFBlockHeader *blk, TLSFMapping mapping) {
+TLSFBlockHeader *TLSF::remove_block(TLSFBlockHeader *blk, uint32_t mapping) {
   TLSFBlockHeader *target = blk;
 
   if(blk == nullptr) {
-    target = _blocks[mapping.fl][mapping.sl];
+    target = _blocks[mapping];
   }
 
   assert(target != nullptr);
@@ -206,18 +214,13 @@ TLSFBlockHeader *TLSF::remove_block(TLSFBlockHeader *blk, TLSFMapping mapping) {
   target->mark_used();
 
   // If the block is the last one in the free-list we need to update
-  if(_blocks[mapping.fl][mapping.sl] == target) {
-    _blocks[mapping.fl][mapping.sl] = target->next;
+  if(_blocks[mapping] == target) {
+    _blocks[mapping] = target->next;
   }
 
   // If the block is the last one in the free-list, we mark it as empty
   if(target->next == nullptr) {
-    _sl_bitmap[mapping.fl] &= ~(1 << mapping.sl);
-
-    // We also need to check if the first-level is now empty as well
-    if(_sl_bitmap[mapping.fl] == 0) {
-      _fl_bitmap &= ~(1 << mapping.fl);
-    }
+    _flatmap &= ~(1UL << mapping);
   }
 
   return target;
@@ -255,28 +258,19 @@ TLSFBlockHeader *TLSF::find_block(size_t size) {
   size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
 
   // With the mapping we search for a free block
-  TLSFMapping mapping = get_mapping(target_size);
+  uint32_t mapping = get_mapping(target_size);
 
   // If the first-level index is out of bounds, the request cannot be fulfilled
-  if(mapping.fl >= _fl_index) {
+  if(mapping >= _num_lists) {
     return nullptr;
   }
 
-  uint32_t sl_map = _sl_bitmap[mapping.fl] & (~0UL << mapping.sl);
-  if(sl_map == 0) {
-    // No suitable block exists in the second level. Search in the next largest
-    // first-level instead
-    uint32_t fl_map = _fl_bitmap & (~0UL << (mapping.fl + 1));
-    if(fl_map == 0) {
-      // No suitable block exists.
-      return nullptr;
-    }
-
-    mapping.fl = TLSFUtil::ffs(fl_map);
-    sl_map = _sl_bitmap[mapping.fl];
+  uint64_t above_mapping = _flatmap & (~0UL << mapping);
+  if(above_mapping == 0) {
+    return nullptr;
   }
 
-  mapping.sl = TLSFUtil::ffs(sl_map);
+  mapping = TLSFUtil::ffs(above_mapping);
 
   // By now we now that we have an available block to use
   TLSFBlockHeader *blk = remove_block(nullptr, mapping);
@@ -291,9 +285,8 @@ TLSFBlockHeader *TLSF::find_block(size_t size) {
   return blk;
 }
 
-TLSFMapping TLSF::get_mapping(size_t size) {
-  uint32_t fl = TLSFUtil::ilog2(size);
-  uint32_t fl2 = (1 << fl);
-  uint32_t sl = (size - fl2) * _sl_index / fl2;
-  return {fl, sl};
+uint32_t TLSF::get_mapping(size_t size) {
+  int fl = TLSFUtil::ilog2(size);
+  int sl = size >> (fl - _sl_index_log2) ^ (1UL << _sl_index_log2);
+  return ((fl - _min_alloc_size_log2) << _sl_index_log2) + sl;
 }

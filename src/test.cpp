@@ -20,8 +20,19 @@ void basic_test() {
 }
 
 int main() {
-  basic_test();
+  //basic_test();
+  
+  const size_t pool_size = sizeof(TLSF) + 32 * 8;
+  uint8_t pool[pool_size];
+  TLSF *t = TLSF::create((uintptr_t)&pool, pool_size);
 
+  t->print_phys_blocks();
+  t->print_flatmap();
+
+  //t->allocate(1);
+
+
+  /*
   uint8_t pool[1000 * 1024];
   TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 1000);
 
@@ -37,4 +48,5 @@ int main() {
 
   std::cout << sizeof(TLSFBlockHeader) << std::endl;
   std::cout << BLOCK_HEADER_LENGTH << std::endl;
+  */
 }

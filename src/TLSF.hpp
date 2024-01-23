@@ -47,24 +47,29 @@ public:
 
   // TODO: Should be removed.
   void print_phys_blocks();
+  void print_flatmap();
 
 private:
   // TLSF Structure Parameters (FLI, SLI & MBS)
+  static const size_t _min_alloc_size = 16;
+  static const size_t _min_alloc_size_log2 = 4;
+  static const size_t _max_alloc_size = 256 * 1024;
+
   static const size_t _alignment = 8;
-  static const size_t _fl_index = 32;
-  static const size_t _sl_index_log2 = 4;
+  static const size_t _fl_index = 14;
+  static const size_t _sl_index_log2 = 2;
   static const size_t _sl_index = (1 << _sl_index_log2);
   static const size_t _mbs = 32;
+
+  static const size_t _num_lists = _fl_index * _sl_index;
 
   uintptr_t _mempool;
   size_t _pool_size;
 
-  uint32_t _fl_bitmap;
-  uint32_t _sl_bitmap[_fl_index];
+  uint64_t _flatmap;
+  TLSFBlockHeader* _blocks[_num_lists];
 
-  TLSFBlockHeader* _blocks[_fl_index][_sl_index_log2];
-
-  static TLSFMapping get_mapping(size_t size);
+  static uint32_t get_mapping(size_t size);
 
   void insert_block(TLSFBlockHeader *blk);
 
@@ -75,7 +80,7 @@ private:
 
   // If blk is not nullptr, blk is removed, otherwise the head of the free-list
   // corresponding to mapping is removed.
-  TLSFBlockHeader *remove_block(TLSFBlockHeader *blk, TLSFMapping mapping);
+  TLSFBlockHeader *remove_block(TLSFBlockHeader *blk, uint32_t mapping);
 
   // size is the number of bytes that should remain in blk. blk is shrinked to
   // size and a new block with the remaining blk->size - size is returned.
