@@ -8,19 +8,12 @@
 #include "TLSF.hpp"
 #include "TLSFUtil.inline.hpp"
 
-// Contains first- and second-level index to segregated lists
-struct TLSFMapping { uint32_t fl, sl; };
-
 #ifndef NODEBUG
 static void print_blk(TLSFBlockHeader *blk) {
   std::cout << "Block (@ " << blk << ")\n" 
             << " size=" << blk->get_size() << "\n"
             << " prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n"
             << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << "\n";
-}
-
-static void print_mapping(TLSFMapping m) {
-  std::cout << "Mapping: fl=" << m.fl << ", sl=" << m.sl << std::endl;
 }
 
 static void print_binary(uint32_t value) {
@@ -69,40 +62,41 @@ void TLSFBlockHeader::unmark_last() {
 }
 
 TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
-  // Check that the initial_pool is aligned
-  //if(!TLSFUtil::is_aligned(initial_pool, _alignment)) {
-    //return nullptr;
-  //}
-
   TLSF *tlsf = reinterpret_cast<TLSF *>(initial_pool);
 
-  tlsf->_mempool = initial_pool;
-
-  // Initialize bitmap and blocks
-  tlsf->_flatmap = 0;
-  for(int i = 0; i < _num_lists; i++) {
-    tlsf->_blocks[i] = nullptr;
-  }
-
   uintptr_t aligned_initial_block = TLSFUtil::align_up(initial_pool + sizeof(TLSF), _alignment);
-  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(aligned_initial_block);
-
-  size_t aligned_block_size = TLSFUtil::align_down(pool_size - sizeof(TLSF) - BLOCK_HEADER_LENGTH, _mbs);
+  tlsf->_block_start = aligned_initial_block;
 
   // The pool size is shrinked to the initial aligned block size. This wastes
   // at maximum (_mbs - 1) bytes
+  size_t aligned_block_size = TLSFUtil::align_down(pool_size - (aligned_initial_block - initial_pool), _mbs);
   tlsf->_pool_size = aligned_block_size;
 
-  blk->size = aligned_block_size;
-  blk->prev_phys_block = nullptr;
-
-  // Insert initial block to the corresponding free-list
-  tlsf->insert_block(blk);
+  tlsf->clear();
 
   return tlsf;
 }
 
-void TLSF::destroy() {}
+void TLSF::clear(bool initial_block_allocated) {
+  // Initialize bitmap and blocks
+  _flatmap = 0;
+  for(int i = 0; i < _num_lists; i++) {
+    _blocks[i] = nullptr;
+  }
+
+  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
+
+  blk->size = _pool_size;
+  blk->prev_phys_block = nullptr;
+
+  // If the initial block is not allocated it should be inserted into its
+  // corresponding free list.
+  if(!initial_block_allocated) {
+    insert_block(blk);
+  } else {
+    blk->mark_used();
+  }
+}
 
 void *TLSF::allocate(size_t size) {
   TLSFBlockHeader *blk = find_block(size);
@@ -136,8 +130,79 @@ void TLSF::free(void *address) {
   insert_block(blk);
 }
 
+void TLSF::free_range(void *address, size_t range) {
+  uintptr_t range_start = (uintptr_t)address;
+  uintptr_t range_end = range_start + range;
+
+  uintptr_t physical_start = _block_start;
+  uintptr_t physical_end = _block_start + _pool_size;
+
+  // Four cases:
+  //     |----|      (1)
+  // [            ]
+  //
+  // |------------|  (2)
+  // [            ]
+  //
+  // |----|          (2)
+  // [            ]
+  //
+  //         |----|  (3)
+  // [            ]
+  //
+
+  TLSFBlockHeader *blk = get_block_containing_address(range_start);
+  uintptr_t blk_start = (uintptr_t)blk;
+  uintptr_t blk_end = blk_start + BLOCK_HEADER_LENGTH + blk->get_size();
+
+  // If the range start and end are not in the same block, the user is calling
+  // this function wrong and we return.
+  if(blk != get_block_containing_address(range_end)) {
+    return;
+  }
+
+  // Case 1: The range is inside the block but not touching any borders.
+  // The result is three blocks: [ Left ][ Free ][ Right ]
+  if(range_start > blk_start && range_end < blk_end) {
+    size_t left_size = (range_start - blk_start);
+    blk->size = left_size - BLOCK_HEADER_LENGTH;
+    blk->mark_used();
+
+    TLSFBlockHeader *free_blk = blk + left_size;
+    free_blk->prev_phys_block = blk;
+    free_blk->size = range - BLOCK_HEADER_LENGTH;
+    insert_block(free_blk);
+
+    TLSFBlockHeader *right_blk = free_blk + range;
+    right_blk->prev_phys_block = free_blk;
+    right_blk->size = blk_end - range_end - BLOCK_HEADER_LENGTH;
+    right_blk->mark_used();
+
+    TLSFBlockHeader *right_blk_next = right_blk + BLOCK_HEADER_LENGTH + right_blk->get_size();
+  
+  // Case 2: If the range is the entire block, we just free the block.
+  } else if(range_start == blk_start && range_end == blk_end) {
+    free(blk + BLOCK_HEADER_LENGTH);
+  // Case 3 & 4: The range is touching one of the block borders.
+  } else if(range_start != blk_start) {
+      // Split the first part of the block.
+      size_t split_size = (range_start - blk_start);
+
+      TLSFBlockHeader *remainder = blk + split_size;
+      remainder->prev_phys_block = blk;
+      remainder->size = 
+  } else if(range_end != blk_end) {
+    // Split the last part of the block and re-link next block.
+  }
+
+  // Case 2: The block starts or ends on the range.
+  // [ F ][ A ] or [ A ][ F ]
+  if(blk_start == range_start) {
+  }
+}
+
 void TLSF::print_phys_blocks() {
-  TLSFBlockHeader *current = (TLSFBlockHeader *)TLSFUtil::align_up(_mempool + sizeof(TLSF), _alignment);
+  TLSFBlockHeader *current = (TLSFBlockHeader *)_block_start;
 
   while(current != nullptr) {
     print_blk(current);
@@ -147,6 +212,12 @@ void TLSF::print_phys_blocks() {
 
 void TLSF::print_flatmap() {
   print_binary(_flatmap);
+}
+
+uint32_t TLSF::get_mapping(size_t size) {
+  int fl = TLSFUtil::ilog2(size);
+  int sl = size >> (fl - _sl_index_log2) ^ (1UL << _sl_index_log2);
+  return ((fl - _min_alloc_size_log2) << _sl_index_log2) + sl;
 }
 
 void TLSF::insert_block(TLSFBlockHeader *blk) {
@@ -167,6 +238,39 @@ void TLSF::insert_block(TLSFBlockHeader *blk) {
 
   // Indicate that the list has free blocks by updating bitmap
   _flatmap |= (1 << mapping);
+}
+
+TLSFBlockHeader *TLSF::find_block(size_t size) {
+  // Round up to mbs and then to the nearest size class
+  size_t aligned_size = TLSFUtil::align_up(size, _mbs);
+  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
+
+  // With the mapping we search for a free block
+  uint32_t mapping = get_mapping(target_size);
+
+  // If the first-level index is out of bounds, the request cannot be fulfilled
+  if(mapping >= _num_lists) {
+    return nullptr;
+  }
+
+  uint64_t above_mapping = _flatmap & (~0UL << mapping);
+  if(above_mapping == 0) {
+    return nullptr;
+  }
+
+  mapping = TLSFUtil::ffs(above_mapping);
+
+  // By now we now that we have an available block to use
+  TLSFBlockHeader *blk = remove_block(nullptr, mapping);
+
+  // If the block is larger than some threshold relative to the requested size
+  // it should be split up to minimize internal fragmentation
+  if((blk->get_size() - aligned_size) >= (_mbs + BLOCK_HEADER_LENGTH)) {
+    TLSFBlockHeader *remainder_blk = split_block(blk, aligned_size);
+    insert_block(remainder_blk);
+  }
+
+  return blk;
 }
 
 TLSFBlockHeader *TLSF::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBlockHeader *blk2) {
@@ -247,46 +351,27 @@ TLSFBlockHeader *TLSF::split_block(TLSFBlockHeader *blk, size_t size) {
 }
 
 TLSFBlockHeader *TLSF::get_next_phys_block(TLSFBlockHeader *blk) {
-  uintptr_t pool_end = TLSFUtil::align_up(_mempool + sizeof(TLSF), _alignment) + _pool_size;
+  uintptr_t pool_end = _block_start + _pool_size;
   uintptr_t next_blk = (uintptr_t)blk + BLOCK_HEADER_LENGTH + blk->get_size();
   return next_blk < pool_end ? (TLSFBlockHeader *)next_blk : nullptr;
 }
 
-TLSFBlockHeader *TLSF::find_block(size_t size) {
-  // Round up to mbs and then to the nearest size class
-  size_t aligned_size = TLSFUtil::align_up(size, _mbs);
-  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
+TLSFBlockHeader *TLSF::get_block_containing_address(uintptr_t address) {
+  uintptr_t target_addr = (uintptr_t)address;
+  uintptr_t physical_end = _block_start + _pool_size;
+  uintptr_t current = _block_start;
 
-  // With the mapping we search for a free block
-  uint32_t mapping = get_mapping(target_size);
+  while(current <= physical_end) {
+    TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(current);
+    uintptr_t current_end = current + BLOCK_HEADER_LENGTH + current_blk->get_size();
 
-  // If the first-level index is out of bounds, the request cannot be fulfilled
-  if(mapping >= _num_lists) {
-    return nullptr;
+    if(target_addr >= current && target_addr <= current_end) {
+      return current_blk;
+    }
+
+    current = current + current_blk->get_size() + BLOCK_HEADER_LENGTH;
   }
 
-  uint64_t above_mapping = _flatmap & (~0UL << mapping);
-  if(above_mapping == 0) {
-    return nullptr;
-  }
-
-  mapping = TLSFUtil::ffs(above_mapping);
-
-  // By now we now that we have an available block to use
-  TLSFBlockHeader *blk = remove_block(nullptr, mapping);
-
-  // If the block is larger than some threshold relative to the requested size
-  // it should be split up to minimize internal fragmentation
-  if((blk->get_size() - aligned_size) >= (_mbs + BLOCK_HEADER_LENGTH)) {
-    TLSFBlockHeader *remainder_blk = split_block(blk, aligned_size);
-    insert_block(remainder_blk);
-  }
-
-  return blk;
+  return nullptr;
 }
 
-uint32_t TLSF::get_mapping(size_t size) {
-  int fl = TLSFUtil::ilog2(size);
-  int sl = size >> (fl - _sl_index_log2) ^ (1UL << _sl_index_log2);
-  return ((fl - _min_alloc_size_log2) << _sl_index_log2) + sl;
-}

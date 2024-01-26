@@ -9,8 +9,6 @@
 
 #define BLOCK_HEADER_LENGTH offsetof(TLSFBlockHeader, next)
 
-struct TLSFMapping;
-
 class TLSFBlockHeader {
 private:
   static const size_t _BlockFreeMask = 1;
@@ -40,10 +38,18 @@ public:
 class TLSF {
 public:
   static TLSF *create(uintptr_t initial_pool, size_t pool_size);
-  void destroy();
+
+  // Calling this function will erase all metadat about allocated objects inside
+  // the allocator, allowing their location in memory to be overriden by new
+  // calls to allocate(). Use with caution.
+  void clear(bool initial_block_allocated = false);
 
   void *allocate(size_t size);
   void free(void *address);
+
+  // This assumes that the range that is described by (address -> (address + range))
+  // contains one (1) allocated block and no more.
+  void free_range(void *address, size_t range);
 
   // TODO: Should be removed.
   void print_phys_blocks();
@@ -63,7 +69,7 @@ private:
 
   static const size_t _num_lists = _fl_index * _sl_index;
 
-  uintptr_t _mempool;
+  uintptr_t _block_start;
   size_t _pool_size;
 
   uint64_t _flatmap;
@@ -87,6 +93,8 @@ private:
   TLSFBlockHeader *split_block(TLSFBlockHeader *blk, size_t size);
 
   TLSFBlockHeader *get_next_phys_block(TLSFBlockHeader *blk);
+
+  TLSFBlockHeader *get_block_containing_address(uintptr_t address);
 };
 
 #endif // TLSF_HPP

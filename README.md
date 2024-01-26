@@ -18,5 +18,12 @@ make sharedlib # Produces a file called libtlsf.so
 LD_PRELOAD=./libtlsf.so ./<some program>
 ```
 
+## TODO
+
+Add a method for clearing the structure.
+Add a method for freeing ranges.
+
+Convert next/prev to offsets.
+
 ## Author
 Joel Sikström
