@@ -26,13 +26,11 @@ int main() {
   uint8_t pool[pool_size];
   TLSF *t = TLSF::create((uintptr_t)&pool, pool_size);
 
-  t->allocate(22);
-  void *ptr = t->allocate(42);
-  t->allocate(42);
-  t->free(ptr);
-
+  t->clear(true);
+  //t->free_range((void *)(0x7fffffffdd78), 240 + 16);
+  //t->free_range((void *)(0x7fffffffdd78 + 64), 256 - 64);
+  t->free_range((void *)(0x7fffffffdd78), 256);
   t->print_phys_blocks();
-  t->print_flatmap();
 
   //t->allocate(1);
 

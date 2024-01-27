@@ -86,7 +86,7 @@ void TLSF::clear(bool initial_block_allocated) {
 
   TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
 
-  blk->size = _pool_size;
+  blk->size = _pool_size - BLOCK_HEADER_LENGTH;
   blk->prev_phys_block = nullptr;
 
   // If the initial block is not allocated it should be inserted into its
@@ -144,10 +144,10 @@ void TLSF::free_range(void *address, size_t range) {
   // |------------|  (2)
   // [            ]
   //
-  // |----|          (2)
+  //         |----|  (3)
   // [            ]
   //
-  //         |----|  (3)
+  // |----|          (4)
   // [            ]
   //
 
@@ -168,36 +168,54 @@ void TLSF::free_range(void *address, size_t range) {
     blk->size = left_size - BLOCK_HEADER_LENGTH;
     blk->mark_used();
 
-    TLSFBlockHeader *free_blk = blk + left_size;
+    TLSFBlockHeader *free_blk = reinterpret_cast<TLSFBlockHeader *>(blk_start + left_size);
     free_blk->prev_phys_block = blk;
     free_blk->size = range - BLOCK_HEADER_LENGTH;
     insert_block(free_blk);
 
-    TLSFBlockHeader *right_blk = free_blk + range;
+    TLSFBlockHeader *right_blk = reinterpret_cast<TLSFBlockHeader *>(blk_start + left_size + range);
     right_blk->prev_phys_block = free_blk;
     right_blk->size = blk_end - range_end - BLOCK_HEADER_LENGTH;
     right_blk->mark_used();
 
-    TLSFBlockHeader *right_blk_next = right_blk + BLOCK_HEADER_LENGTH + right_blk->get_size();
-  
+    if(blk_end != physical_end) {
+      TLSFBlockHeader *next = (TLSFBlockHeader *)blk_end;
+      next->prev_phys_block = right_blk;
+    }
+
   // Case 2: If the range is the entire block, we just free the block.
   } else if(range_start == blk_start && range_end == blk_end) {
-    free(blk + BLOCK_HEADER_LENGTH);
-  // Case 3 & 4: The range is touching one of the block borders.
-  } else if(range_start != blk_start) {
-      // Split the first part of the block.
-      size_t split_size = (range_start - blk_start);
+    free(reinterpret_cast<TLSFBlockHeader *>(blk_start + BLOCK_HEADER_LENGTH));
 
-      TLSFBlockHeader *remainder = blk + split_size;
-      remainder->prev_phys_block = blk;
-      remainder->size = 
-  } else if(range_end != blk_end) {
+  // Case 3: The range is touching the block end.
+  } else if(range_end == blk_end) {
+    // Split the first part of the block.
+    size_t split_size = (range_start - blk_start);
+    blk->size = split_size - BLOCK_HEADER_LENGTH;
+    blk->mark_used();
+
+    TLSFBlockHeader *rem_blk = reinterpret_cast<TLSFBlockHeader *>(blk_start + split_size);
+    rem_blk->prev_phys_block = blk;
+    rem_blk->size = blk_end - blk_start - split_size - BLOCK_HEADER_LENGTH;
+    insert_block(rem_blk);
+
+
+  // Case 4: The range is touching the block start.
+  } else if(range_start == blk_start) {
     // Split the last part of the block and re-link next block.
-  }
+    size_t split_size = blk_end - range_end;
+    blk->size = blk_end - blk_start - split_size - BLOCK_HEADER_LENGTH;
+    insert_block(blk);
 
-  // Case 2: The block starts or ends on the range.
-  // [ F ][ A ] or [ A ][ F ]
-  if(blk_start == range_start) {
+    TLSFBlockHeader *rem_blk = reinterpret_cast<TLSFBlockHeader *>(blk_start + blk->get_size() + BLOCK_HEADER_LENGTH);
+    rem_blk->prev_phys_block = blk;
+    rem_blk->size = split_size - BLOCK_HEADER_LENGTH;
+    rem_blk->mark_used();
+
+    if(blk_end != physical_end) {
+      TLSFBlockHeader *next = (TLSFBlockHeader *)blk_end;
+      next->prev_phys_block = rem_blk;
+    }
   }
 }
 

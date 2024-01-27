@@ -15,6 +15,9 @@ private:
   static const size_t _BlockLastMask = 1 << 1;
 
 public:
+  // Size does not include header size and represents the usable chunk of the block.
+  // I.e  [          BLOCK          ]
+  //      [ HEADER ] [     SIZE     ]
   size_t size;
 
   TLSFBlockHeader *prev_phys_block;
