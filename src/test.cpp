@@ -5,7 +5,7 @@
 #include "TLSF.hpp"
 
 void basic_test() {
-  const size_t pool_size = sizeof(TLSF) + 32 * 4;
+  const size_t pool_size = sizeof(TLSF) + 32 * 16;
   uint8_t pool[pool_size];
   TLSF *t = TLSF::create((uintptr_t)&pool, pool_size);
 
@@ -16,9 +16,13 @@ void basic_test() {
   assert(ptr2 != nullptr);
 
   void *ptr3 = t->allocate(1);
-  assert(ptr3 == nullptr);
+  assert(ptr3 != nullptr);
+
+  void *ptr4 = t->allocate(1);
+  assert(ptr3 != nullptr);
 
   t->free(ptr1);
+  t->free(ptr3);
 }
 
 void CUnit_initialize_test() {
@@ -34,4 +38,6 @@ void CUnit_initialize_test() {
 
 int main() {
   basic_test();
+
+  std::cout << "blkheaderlen: " << BLOCK_HEADER_LENGTH << std::endl;
 }

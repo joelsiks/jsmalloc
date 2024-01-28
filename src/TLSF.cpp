@@ -3,7 +3,7 @@
 
 #include <cmath>
 #include <iostream>
-#include <assert.h>
+#include <cassert>
 
 #include "TLSF.hpp"
 #include "TLSFUtil.inline.hpp"
@@ -14,6 +14,10 @@ static void print_blk(TLSFBlockHeader *blk) {
             << " size=" << blk->get_size() << "\n"
             << " prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n"
             << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << "\n";
+
+  if(blk->is_free()) {
+    std::cout << " next=" << blk->next << ", prev=" << blk->prev << "\n";
+  }
 }
 
 static void print_binary(uint32_t value) {
@@ -232,6 +236,18 @@ void TLSF::print_flatmap() {
   print_binary(_flatmap);
 }
 
+uint32_t TLSF::block_offset(TLSFBlockHeader *blk) {
+  return (blk == nullptr)
+    ? TLSFBlockHeader::NULL_OFFSET
+    : ((uintptr_t)blk - _block_start);
+}
+
+TLSFBlockHeader *TLSF::block_address(uint32_t offset) {
+  return (offset == TLSFBlockHeader::NULL_OFFSET) 
+    ? nullptr 
+    : reinterpret_cast<TLSFBlockHeader *>(offset + _block_start);
+}
+
 uint32_t TLSF::get_mapping(size_t size) {
   int fl = TLSFUtil::ilog2(size);
   int sl = size >> (fl - _sl_index_log2) ^ (1UL << _sl_index_log2);
@@ -245,10 +261,10 @@ void TLSF::insert_block(TLSFBlockHeader *blk) {
 
   // Insert the block into its corresponding free-list
   if(head != nullptr) {
-    head->prev = blk;
+    head->prev = block_offset(blk);
   }
-  blk->next = head;
-  blk->prev = nullptr;
+  blk->next = block_offset(head);
+  blk->prev = TLSFBlockHeader::NULL_OFFSET;
   _blocks[mapping] = blk;
 
   // Mark the block as free
@@ -324,12 +340,12 @@ TLSFBlockHeader *TLSF::remove_block(TLSFBlockHeader *blk, uint32_t mapping) {
 
   assert(target != nullptr);
 
-  if(target->next != nullptr) {
-    target->next->prev = target->prev;
+  if(target->next != TLSFBlockHeader::NULL_OFFSET) {
+    block_address(target->next)->prev = target->prev;
   }
 
-  if(target->prev != nullptr) {
-    target->prev->next = target->next;
+  if(target->prev != TLSFBlockHeader::NULL_OFFSET) {
+    block_address(target->prev)->next = target->next;
   }
 
   // Mark the block as used (no longer free)
@@ -337,11 +353,11 @@ TLSFBlockHeader *TLSF::remove_block(TLSFBlockHeader *blk, uint32_t mapping) {
 
   // If the block is the last one in the free-list we need to update
   if(_blocks[mapping] == target) {
-    _blocks[mapping] = target->next;
+    _blocks[mapping] = block_address(target->next);
   }
 
   // If the block is the last one in the free-list, we mark it as empty
-  if(target->next == nullptr) {
+  if(target->next == TLSFBlockHeader::NULL_OFFSET) {
     _flatmap &= ~(1UL << mapping);
   }
 

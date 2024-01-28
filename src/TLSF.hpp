@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #define BLOCK_HEADER_LENGTH offsetof(TLSFBlockHeader, next)
 
@@ -22,9 +23,12 @@ public:
 
   TLSFBlockHeader *prev_phys_block;
 
-  // next and prev are only used in free (unused) blocks.
-  TLSFBlockHeader *next;
-  TLSFBlockHeader *prev;
+  // next and prev are only used in free (unused) blocks. Indicates an offset from
+  // the start of the first block in the allocator.
+  uint32_t next;
+  uint32_t prev;
+
+  static const uint32_t NULL_OFFSET = std::numeric_limits<uint32_t>::max();
 
   size_t get_size();
 
@@ -42,7 +46,7 @@ class TLSF {
 public:
   static TLSF *create(uintptr_t initial_pool, size_t pool_size);
 
-  // Calling this function will erase all metadat about allocated objects inside
+  // Calling this function will erase all metadata about allocated objects inside
   // the allocator, allowing their location in memory to be overriden by new
   // calls to allocate(). Use with caution.
   void clear(bool initial_block_allocated = false);
@@ -62,7 +66,6 @@ private:
   // TLSF Structure Parameters (FLI, SLI & MBS)
   static const size_t _min_alloc_size = 16;
   static const size_t _min_alloc_size_log2 = 4;
-  static const size_t _max_alloc_size = 256 * 1024;
 
   static const size_t _alignment = 8;
   static const size_t _fl_index = 14;
@@ -78,7 +81,12 @@ private:
   uint64_t _flatmap;
   TLSFBlockHeader* _blocks[_num_lists];
 
+
   static uint32_t get_mapping(size_t size);
+
+  // Used for converting to/from an offset for efficient storage in blocks.
+  inline uint32_t block_offset(TLSFBlockHeader *blk);
+  inline TLSFBlockHeader *block_address(uint32_t offset);
 
   void insert_block(TLSFBlockHeader *blk);
 
