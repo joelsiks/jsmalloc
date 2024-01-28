@@ -108,12 +108,12 @@ void *TLSF::allocate(size_t size) {
   // Make sure addresses are aligned to the word-size (8-bytes).
   // TODO: This might not be necessary if everything is already aligned, and
   // should take into account that the block size might be smaller than expected.
-  uintptr_t blk_start = ((uintptr_t)blk + BLOCK_HEADER_LENGTH);
+  uintptr_t blk_start = (uintptr_t)blk + BLOCK_HEADER_LENGTH;
   return (void *)TLSFUtil::align_up(blk_start, _alignment);
 }
 
 void TLSF::free(void *address) {
-  TLSFBlockHeader *blk = (TLSFBlockHeader *)((uintptr_t)address - BLOCK_HEADER_LENGTH);
+  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - BLOCK_HEADER_LENGTH);
 
   // Try to merge with adjacent blocks
   TLSFBlockHeader *prev_blk = blk->prev_phys_block;
@@ -354,7 +354,7 @@ TLSFBlockHeader *TLSF::split_block(TLSFBlockHeader *blk, size_t size) {
   blk->size = size;
 
   // Use a portion of blk's memory for the new block
-  TLSFBlockHeader *remainder_blk = (TLSFBlockHeader *)((uintptr_t)blk + BLOCK_HEADER_LENGTH + blk->get_size());
+  TLSFBlockHeader *remainder_blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)blk + BLOCK_HEADER_LENGTH + blk->get_size());
   remainder_blk->size = remainder_size;
   remainder_blk->prev_phys_block = blk;
 

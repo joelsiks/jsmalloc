@@ -20,8 +20,8 @@ LD_PRELOAD=./libtlsf.so ./<some program>
 
 ## TODO
 
-Add a method for clearing the structure.
-Add a method for freeing ranges.
+Add a method for clearing the structure. DONE
+Add a method for freeing ranges. DONE
 
 Convert next/prev to offsets.
 

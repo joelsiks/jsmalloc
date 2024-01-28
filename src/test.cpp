@@ -17,24 +17,11 @@ void basic_test() {
 
   void *ptr3 = t->allocate(1);
   assert(ptr3 == nullptr);
+
+  t->free(ptr1);
 }
 
-int main() {
-  //basic_test();
-  
-  const size_t pool_size = sizeof(TLSF) + 32 * 8;
-  uint8_t pool[pool_size];
-  TLSF *t = TLSF::create((uintptr_t)&pool, pool_size);
-
-  t->clear(true);
-  //t->free_range((void *)(0x7fffffffdd78), 240 + 16);
-  //t->free_range((void *)(0x7fffffffdd78 + 64), 256 - 64);
-  t->free_range((void *)(0x7fffffffdd78), 256);
-  t->print_phys_blocks();
-
-  //t->allocate(1);
-
-  /*
+void CUnit_initialize_test() {
   uint8_t pool[1000 * 1024];
   TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 1000);
 
@@ -43,12 +30,8 @@ int main() {
   void *b = tl->allocate(128);
   a = tl->allocate(1024);
   a = tl->allocate(9488880);
+}
 
-  tl->print_phys_blocks();
-
-  tl->free(b);
-
-  std::cout << sizeof(TLSFBlockHeader) << std::endl;
-  std::cout << BLOCK_HEADER_LENGTH << std::endl;
-  */
+int main() {
+  basic_test();
 }
