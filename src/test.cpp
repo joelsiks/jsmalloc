@@ -56,7 +56,7 @@ void free_range_test() {
 }
 
 void deferred_coalescing_test() {
-  const size_t pool_size = 32 * 16;
+  const size_t pool_size = 24 * 16;
   uint8_t pool[pool_size];
   TLSF t((uintptr_t)&pool, pool_size, true);
 

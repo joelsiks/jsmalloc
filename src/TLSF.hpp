@@ -8,7 +8,8 @@
 #include <cstdint>
 #include <limits>
 
-#define BLOCK_HEADER_LENGTH offsetof(TLSFBlockHeader, next)
+#define BLOCK_HEADER_LENGTH_SMALL offsetof(TLSFBlockHeader, next)
+#define BLOCK_HEADER_LENGTH sizeof(TLSFBlockHeader)
 
 class TLSFBlockHeader {
 private:
@@ -21,12 +22,15 @@ public:
   // Size does not include header size and represents the usable chunk of the block.
   size_t size;
 
-  TLSFBlockHeader *prev_phys_block;
-
   // Indicates an offset from the start of the first block in the allocator.
   // next and prev are only used in free (unused) blocks
   uint32_t next;
   uint32_t prev;
+
+  TLSFBlockHeader *prev_phys_block;
+
+  uint32_t get_next(bool use_prev_phys);
+  uint32_t get_prev(bool use_prev_phys);
 
   size_t get_size();
 
@@ -76,11 +80,13 @@ private:
   static const size_t _fl_index = 14;
   static const size_t _sl_index_log2 = 2;
   static const size_t _sl_index = (1 << _sl_index_log2);
-  static const size_t _mbs = 32;
 
   static const size_t _num_lists = _fl_index * _sl_index;
 
   bool _deferred_coalescing;
+  size_t _block_header_length;
+  size_t _mbs;
+
   uintptr_t _block_start;
   size_t _pool_size;
 
@@ -89,7 +95,7 @@ private:
 
   static uint32_t get_mapping(size_t size);
 
-  void initialize(uintptr_t initial_pool, size_t pool_size);
+  void initialize(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing);
 
   // Used for converting to/from an offset for efficient storage in blocks.
   inline uint32_t block_offset(TLSFBlockHeader *blk);
