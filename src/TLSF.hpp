@@ -60,6 +60,7 @@ public:
 
   // TODO: Should be removed.
   void print_phys_blocks();
+  void print_free_lists();
   void print_flatmap();
 
 private:

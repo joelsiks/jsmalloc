@@ -20,5 +20,13 @@ LD_PRELOAD=./libtlsf.so ./<some program>
 
 ## TODO
 
+Print free-lists
+
+Fragmentation metrics
+    - Overhead due to block header
+    - Internal fragmentation (wasted space du to alignment)
+    - External fragmentation [calc](https://stackoverflow.com/questions/4586972/how-to-calculate-fragmentation).
+
+
 ## Author
 Joel Sikström

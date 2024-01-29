@@ -190,6 +190,22 @@ void TLSF::print_phys_blocks() {
   }
 }
 
+void TLSF::print_free_lists() {
+  print_flatmap();
+  for(size_t i = 0; i < 64; i++) {
+    if((_flatmap & (1UL << i)) == 0) {
+      continue;
+    }
+    printf("FREE-LIST (%02ld): ", i);
+    TLSFBlockHeader *current = _blocks[i];
+    while(current != nullptr) {
+      std::cout << current << " -> ";
+      current = block_address(current->next);
+    }
+    std::cout << "END" << std::endl;
+  }
+}
+
 void TLSF::print_flatmap() {
   print_binary(_flatmap);
 }

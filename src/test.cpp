@@ -1,4 +1,6 @@
 
+// Author: Joel Sikström
+
 #include <assert.h>
 #include <iostream>
 
@@ -39,6 +41,7 @@ void constructor_test() {
   t.free(b);
 
   t.print_phys_blocks();
+  t.print_free_lists();
 }
 
 void free_range_test() {
@@ -47,7 +50,7 @@ void free_range_test() {
   TLSF t((uintptr_t)&pool, pool_size);
   t.clear(true);
   t.print_phys_blocks();
-  t.free_range((void *)(0x7fffffffdc60 + 64), 64);
+  t.free_range((void *)((uintptr_t)&pool + 64), 64);
   std::cout << "---------------\n";
   t.print_phys_blocks();
 }
