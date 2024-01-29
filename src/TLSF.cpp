@@ -153,7 +153,6 @@ void TLSF::free_range(void *address, size_t range) {
   //
   // |----|          (4)
   // [            ]
-  //
 
   TLSFBlockHeader *blk = get_block_containing_address(range_start);
   uintptr_t blk_start = (uintptr_t)blk;

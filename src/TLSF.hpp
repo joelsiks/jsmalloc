@@ -16,19 +16,17 @@ private:
   static const size_t _BlockLastMask = 1 << 1;
 
 public:
+  static const uint32_t NULL_OFFSET = std::numeric_limits<uint32_t>::max();
+
   // Size does not include header size and represents the usable chunk of the block.
-  // I.e  [          BLOCK          ]
-  //      [ HEADER ] [     SIZE     ]
   size_t size;
 
   TLSFBlockHeader *prev_phys_block;
 
-  // next and prev are only used in free (unused) blocks. Indicates an offset from
-  // the start of the first block in the allocator.
+  // Indicates an offset from the start of the first block in the allocator.
+  // next and prev are only used in free (unused) blocks
   uint32_t next;
   uint32_t prev;
-
-  static const uint32_t NULL_OFFSET = std::numeric_limits<uint32_t>::max();
 
   size_t get_size();
 
@@ -55,7 +53,7 @@ public:
   void free(void *address);
 
   // This assumes that the range that is described by (address -> (address + range))
-  // contains one (1) allocated block and no more.
+  // contains one allocated block and no more.
   void free_range(void *address, size_t range);
 
   // TODO: Should be removed.
@@ -80,7 +78,6 @@ private:
 
   uint64_t _flatmap;
   TLSFBlockHeader* _blocks[_num_lists];
-
 
   static uint32_t get_mapping(size_t size);
 
