@@ -55,6 +55,28 @@ void free_range_test() {
   t.print_phys_blocks();
 }
 
+void deferred_coalescing_test() {
+  const size_t pool_size = 32 * 16;
+  uint8_t pool[pool_size];
+  TLSF t((uintptr_t)&pool, pool_size, true);
+
+  void *obj1 = t.allocate(1);
+  void *obj2 = t.allocate(1);
+  t.allocate(1);
+  void *obj3 = t.allocate(1);
+  void *obj4 = t.allocate(1);
+
+  t.free(obj1);
+  t.free(obj2);
+  t.free(obj3);
+  t.free(obj4);
+  std::cout << "Deferred coalescing:\n";
+  t.print_phys_blocks();
+  t.coalesce_blocks();
+  std::cout << "------------------\n";
+  t.print_phys_blocks();
+}
+
 void CUnit_initialize_test() {
   uint8_t pool[1000 * 1024];
   TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 1000);
@@ -70,4 +92,5 @@ int main() {
   basic_test();
   constructor_test();
   free_range_test();
+  deferred_coalescing_test();
 }

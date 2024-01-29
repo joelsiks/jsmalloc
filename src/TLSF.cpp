@@ -67,12 +67,14 @@ void TLSFBlockHeader::unmark_last() {
   size &= ~_BlockLastMask;
 }
 
-TLSF::TLSF(uintptr_t initial_pool, size_t pool_size) {
+TLSF::TLSF(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing) 
+  : _deferred_coalescing(deferred_coalescing) {
   initialize(initial_pool, pool_size);
 }
 
-TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
+TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing) {
   TLSF *tlsf = reinterpret_cast<TLSF *>(initial_pool);
+  tlsf->_deferred_coalescing = deferred_coalescing;
   tlsf->initialize(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF));
   return tlsf;
 }
@@ -116,15 +118,17 @@ void TLSF::free(void *address) {
   TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - BLOCK_HEADER_LENGTH);
 
   // Try to merge with adjacent blocks
-  TLSFBlockHeader *prev_blk = blk->prev_phys_block;
-  TLSFBlockHeader *next_blk = get_next_phys_block(blk);
+  if(!_deferred_coalescing) {
+    TLSFBlockHeader *prev_blk = blk->prev_phys_block;
+    TLSFBlockHeader *next_blk = get_next_phys_block(blk);
 
-  if(prev_blk != nullptr && prev_blk->is_free()) {
-    blk = coalesce_blocks(prev_blk, blk);
-  }
+    if(prev_blk != nullptr && prev_blk->is_free()) {
+      blk = coalesce_blocks(prev_blk, blk);
+    }
 
-  if(next_blk != nullptr && next_blk->is_free()) {
-    blk = coalesce_blocks(blk, next_blk);
+    if(next_blk != nullptr && next_blk->is_free()) {
+      blk = coalesce_blocks(blk, next_blk);
+    }
   }
 
   insert_block(blk);
@@ -144,21 +148,7 @@ void TLSF::free_range(void *address, size_t range) {
     return;
   }
 
-  // Four cases:
-  //     |----|      (1)
-  // [            ]
-  //
-  // |------------|  (2)
-  // [            ]
-  //
-  //         |----|  (3)
-  // [            ]
-  //
-  // |----|          (4)
-  // [            ]
-
   // Case 1: The range is inside the block but not touching any borders.
-  // The result is three blocks: [ Left ][ Free ][ Right ]
   if(range_start > blk_start && range_end < blk_end) {
     size_t left_size = range_start - blk_start - BLOCK_HEADER_LENGTH;
     TLSFBlockHeader *free_blk = split_block(blk, left_size);
@@ -178,6 +168,22 @@ void TLSF::free_range(void *address, size_t range) {
   } else if(range_start == blk_start) {
     size_t split_size = range_end - blk_start - BLOCK_HEADER_LENGTH;
     insert_block(split_block(blk, split_size));
+  }
+}
+
+void TLSF::coalesce_blocks() {
+  TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
+  TLSFBlockHeader *next_blk = get_next_phys_block(current_blk);
+
+  while(next_blk != nullptr) {
+    if(current_blk->is_free() && next_blk->is_free()) {
+      current_blk = coalesce_blocks(current_blk, next_blk);
+      insert_block(current_blk);
+    } else {
+      current_blk = next_blk;
+    }
+
+    next_blk = get_next_phys_block(current_blk);
   }
 }
 
@@ -294,14 +300,8 @@ TLSFBlockHeader *TLSF::find_block(size_t size) {
 }
 
 TLSFBlockHeader *TLSF::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBlockHeader *blk2) {
-  // Make sure both blocks are removed from their free-lists
-  if(blk1->is_free()) {
-    remove_block(blk1, get_mapping(blk1->get_size()));
-  }
-
-  if(blk2->is_free()) {
-    remove_block(blk2, get_mapping(blk2->get_size()));
-  }
+  remove_block(blk1, get_mapping(blk1->get_size()));
+  remove_block(blk2, get_mapping(blk2->get_size()));
 
   // Combine the blocks by adding the size of blk2 to block1 and also the block
   // header size

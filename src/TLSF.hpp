@@ -43,8 +43,8 @@ public:
 class TLSF {
 public:
   // Constructors
-  TLSF(uintptr_t initial_pool, size_t pool_size);
-  static TLSF *create(uintptr_t initial_pool, size_t pool_size);
+  TLSF(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false);
+  static TLSF *create(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false);
 
   // Calling this function will erase all metadata about allocated objects inside
   // the allocator, allowing their location in memory to be overriden by new
@@ -57,6 +57,10 @@ public:
   // This assumes that the range that is described by (address -> (address + range))
   // contains one allocated block and no more.
   void free_range(void *address, size_t range);
+
+  // Manually trigger block coalescing. Usually only needed if allocator is
+  // configured with deferred_coalescing.
+  void coalesce_blocks();
 
   // TODO: Should be removed.
   void print_phys_blocks();
@@ -76,6 +80,7 @@ private:
 
   static const size_t _num_lists = _fl_index * _sl_index;
 
+  bool _deferred_coalescing;
   uintptr_t _block_start;
   size_t _pool_size;
 
