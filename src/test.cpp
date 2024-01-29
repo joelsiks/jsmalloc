@@ -25,6 +25,33 @@ void basic_test() {
   t->free(ptr3);
 }
 
+void constructor_test() {
+  const size_t pool_size = 32 * 16 + 16;
+  uint8_t pool[pool_size];
+  TLSF t((uintptr_t)&pool, pool_size);
+
+  void *a = t.allocate(1);
+  t.allocate(1);
+  void *b = t.allocate(1);
+  t.allocate(1);
+
+  t.free(a);
+  t.free(b);
+
+  t.print_phys_blocks();
+}
+
+void free_range_test() {
+  const size_t pool_size = 32 * 16;
+  uint8_t pool[pool_size];
+  TLSF t((uintptr_t)&pool, pool_size);
+  t.clear(true);
+  t.print_phys_blocks();
+  t.free_range((void *)(0x7fffffffdc60 + 64), 64);
+  std::cout << "---------------\n";
+  t.print_phys_blocks();
+}
+
 void CUnit_initialize_test() {
   uint8_t pool[1000 * 1024];
   TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 1000);
@@ -38,6 +65,6 @@ void CUnit_initialize_test() {
 
 int main() {
   basic_test();
-
-  std::cout << "blkheaderlen: " << BLOCK_HEADER_LENGTH << std::endl;
+  constructor_test();
+  free_range_test();
 }

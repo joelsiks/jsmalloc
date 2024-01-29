@@ -42,6 +42,8 @@ public:
 
 class TLSF {
 public:
+  // Constructors
+  TLSF(uintptr_t initial_pool, size_t pool_size);
   static TLSF *create(uintptr_t initial_pool, size_t pool_size);
 
   // Calling this function will erase all metadata about allocated objects inside
@@ -80,6 +82,8 @@ private:
   TLSFBlockHeader* _blocks[_num_lists];
 
   static uint32_t get_mapping(size_t size);
+
+  void initialize(uintptr_t initial_pool, size_t pool_size);
 
   // Used for converting to/from an offset for efficient storage in blocks.
   inline uint32_t block_offset(TLSFBlockHeader *blk);

@@ -16,7 +16,9 @@ static void print_blk(TLSFBlockHeader *blk) {
             << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << "\n";
 
   if(blk->is_free()) {
-    std::cout << " next=" << blk->next << ", prev=" << blk->prev << "\n";
+    std::cout << " next=" << ((blk->next == TLSFBlockHeader::NULL_OFFSET) ? "NULL" : std::to_string(blk->next))
+              << " prev=" << ((blk->prev == TLSFBlockHeader::NULL_OFFSET) ? "NULL" : std::to_string(blk->prev))
+              << std::endl;
   }
 }
 
@@ -65,19 +67,13 @@ void TLSFBlockHeader::unmark_last() {
   size &= ~_BlockLastMask;
 }
 
+TLSF::TLSF(uintptr_t initial_pool, size_t pool_size) {
+  initialize(initial_pool, pool_size);
+}
+
 TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
   TLSF *tlsf = reinterpret_cast<TLSF *>(initial_pool);
-
-  uintptr_t aligned_initial_block = TLSFUtil::align_up(initial_pool + sizeof(TLSF), _alignment);
-  tlsf->_block_start = aligned_initial_block;
-
-  // The pool size is shrinked to the initial aligned block size. This wastes
-  // at maximum (_mbs - 1) bytes
-  size_t aligned_block_size = TLSFUtil::align_down(pool_size - (aligned_initial_block - initial_pool), _mbs);
-  tlsf->_pool_size = aligned_block_size;
-
-  tlsf->clear();
-
+  tlsf->initialize(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF));
   return tlsf;
 }
 
@@ -138,8 +134,15 @@ void TLSF::free_range(void *address, size_t range) {
   uintptr_t range_start = (uintptr_t)address;
   uintptr_t range_end = range_start + range;
 
-  uintptr_t physical_start = _block_start;
-  uintptr_t physical_end = _block_start + _pool_size;
+  TLSFBlockHeader *blk = get_block_containing_address(range_start);
+  uintptr_t blk_start = (uintptr_t)blk;
+  uintptr_t blk_end = blk_start + BLOCK_HEADER_LENGTH + blk->get_size();
+
+  // If the range start and end are not in the same block, the user is calling
+  // this function wrong and we return.
+  if(blk != get_block_containing_address(range_end)) {
+    return;
+  }
 
   // Four cases:
   //     |----|      (1)
@@ -154,37 +157,13 @@ void TLSF::free_range(void *address, size_t range) {
   // |----|          (4)
   // [            ]
 
-  TLSFBlockHeader *blk = get_block_containing_address(range_start);
-  uintptr_t blk_start = (uintptr_t)blk;
-  uintptr_t blk_end = blk_start + BLOCK_HEADER_LENGTH + blk->get_size();
-
-  // If the range start and end are not in the same block, the user is calling
-  // this function wrong and we return.
-  if(blk != get_block_containing_address(range_end)) {
-    return;
-  }
-
   // Case 1: The range is inside the block but not touching any borders.
   // The result is three blocks: [ Left ][ Free ][ Right ]
   if(range_start > blk_start && range_end < blk_end) {
-    size_t left_size = (range_start - blk_start);
-    blk->size = left_size - BLOCK_HEADER_LENGTH;
-    blk->mark_used();
-
-    TLSFBlockHeader *free_blk = reinterpret_cast<TLSFBlockHeader *>(blk_start + left_size);
-    free_blk->prev_phys_block = blk;
-    free_blk->size = range - BLOCK_HEADER_LENGTH;
+    size_t left_size = range_start - blk_start - BLOCK_HEADER_LENGTH;
+    TLSFBlockHeader *free_blk = split_block(blk, left_size);
+    TLSFBlockHeader *right_blk = split_block(free_blk, range - BLOCK_HEADER_LENGTH);
     insert_block(free_blk);
-
-    TLSFBlockHeader *right_blk = reinterpret_cast<TLSFBlockHeader *>(blk_start + left_size + range);
-    right_blk->prev_phys_block = free_blk;
-    right_blk->size = blk_end - range_end - BLOCK_HEADER_LENGTH;
-    right_blk->mark_used();
-
-    if(blk_end != physical_end) {
-      TLSFBlockHeader *next = (TLSFBlockHeader *)blk_end;
-      next->prev_phys_block = right_blk;
-    }
 
   // Case 2: If the range is the entire block, we just free the block.
   } else if(range_start == blk_start && range_end == blk_end) {
@@ -192,33 +171,13 @@ void TLSF::free_range(void *address, size_t range) {
 
   // Case 3: The range is touching the block end.
   } else if(range_end == blk_end) {
-    // Split the first part of the block.
-    size_t split_size = (range_start - blk_start);
-    blk->size = split_size - BLOCK_HEADER_LENGTH;
-    blk->mark_used();
-
-    TLSFBlockHeader *rem_blk = reinterpret_cast<TLSFBlockHeader *>(blk_start + split_size);
-    rem_blk->prev_phys_block = blk;
-    rem_blk->size = blk_end - blk_start - split_size - BLOCK_HEADER_LENGTH;
-    insert_block(rem_blk);
-
+    size_t split_size = range_start - blk_start - BLOCK_HEADER_LENGTH;
+    insert_block(split_block(blk, split_size));
 
   // Case 4: The range is touching the block start.
   } else if(range_start == blk_start) {
-    // Split the last part of the block and re-link next block.
-    size_t split_size = blk_end - range_end;
-    blk->size = blk_end - blk_start - split_size - BLOCK_HEADER_LENGTH;
-    insert_block(blk);
-
-    TLSFBlockHeader *rem_blk = reinterpret_cast<TLSFBlockHeader *>(blk_start + blk->get_size() + BLOCK_HEADER_LENGTH);
-    rem_blk->prev_phys_block = blk;
-    rem_blk->size = split_size - BLOCK_HEADER_LENGTH;
-    rem_blk->mark_used();
-
-    if(blk_end != physical_end) {
-      TLSFBlockHeader *next = (TLSFBlockHeader *)blk_end;
-      next->prev_phys_block = rem_blk;
-    }
+    size_t split_size = range_end - blk_start - BLOCK_HEADER_LENGTH;
+    insert_block(split_block(blk, split_size));
   }
 }
 
@@ -251,6 +210,18 @@ uint32_t TLSF::get_mapping(size_t size) {
   int fl = TLSFUtil::ilog2(size);
   int sl = size >> (fl - _sl_index_log2) ^ (1UL << _sl_index_log2);
   return ((fl - _min_alloc_size_log2) << _sl_index_log2) + sl;
+}
+
+void TLSF::initialize(uintptr_t initial_pool, size_t pool_size) {
+  uintptr_t aligned_initial_block = TLSFUtil::align_up(initial_pool, _alignment);
+  _block_start = aligned_initial_block;
+
+  // The pool size is shrinked to the initial aligned block size. This wastes
+  // at maximum (_mbs - 1) bytes
+  size_t aligned_block_size = TLSFUtil::align_down(pool_size - (aligned_initial_block - initial_pool), _mbs);
+  _pool_size = aligned_block_size;
+
+  clear();
 }
 
 void TLSF::insert_block(TLSFBlockHeader *blk) {
