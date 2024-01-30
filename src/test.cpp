@@ -7,7 +7,8 @@
 #include "TLSF.hpp"
 
 void basic_test() {
-  const size_t pool_size = sizeof(TLSF) + 32 * 16;
+  std::cout << "sizeof(TLSF): " << sizeof(TLSF) << std::endl;
+  const size_t pool_size = sizeof(TLSF) + 1024 * 1000;
   uint8_t pool[pool_size];
   TLSF *t = TLSF::create((uintptr_t)&pool, pool_size);
 
@@ -56,9 +57,9 @@ void free_range_test() {
 }
 
 void deferred_coalescing_test() {
-  const size_t pool_size = 24 * 16;
+  const size_t pool_size = 16 * 16 + 8;
   uint8_t pool[pool_size];
-  TLSF t((uintptr_t)&pool, pool_size, true);
+  ZPageOptimizedTLSF t((uintptr_t)&pool, pool_size, true);
 
   void *obj1 = t.allocate(1);
   void *obj2 = t.allocate(1);
@@ -88,9 +89,17 @@ void CUnit_initialize_test() {
   a = tl->allocate(9488880);
 }
 
+void optimized_test() {
+  uint8_t pool[1000 * 1024];
+  ZPageOptimizedTLSF t((uintptr_t)&pool, 1000 * 1024);
+
+  t.allocate(1);
+}
+
 int main() {
-  basic_test();
   constructor_test();
+  basic_test();
   free_range_test();
   deferred_coalescing_test();
+  optimized_test();
 }

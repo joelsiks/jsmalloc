@@ -11,6 +11,8 @@
 #define BLOCK_HEADER_LENGTH_SMALL offsetof(TLSFBlockHeader, next)
 #define BLOCK_HEADER_LENGTH sizeof(TLSFBlockHeader)
 
+struct TLSFMapping;
+
 class TLSFBlockHeader {
 private:
   static const size_t _BlockFreeMask = 1;
@@ -71,29 +73,29 @@ public:
   void print_free_lists();
   void print_flatmap();
 
-private:
+protected:
+  TLSF() {}
+
   // TLSF Structure Parameters (FLI, SLI & MBS)
   static const size_t _min_alloc_size = 16;
   static const size_t _min_alloc_size_log2 = 4;
-
   static const size_t _alignment = 8;
-  static const size_t _fl_index = 14;
-  static const size_t _sl_index_log2 = 2;
-  static const size_t _sl_index = (1 << _sl_index_log2);
+  static const size_t _mbs = 32;
 
+  static const size_t _fl_index = 32;
+  static const size_t _sl_index_log2 = 5;
+  static const size_t _sl_index = (1 << _sl_index_log2);
   static const size_t _num_lists = _fl_index * _sl_index;
 
   bool _deferred_coalescing;
   size_t _block_header_length;
-  size_t _mbs;
 
   uintptr_t _block_start;
   size_t _pool_size;
 
-  uint64_t _flatmap;
+  uint64_t _fl_bitmap;
+  uint32_t _sl_bitmap[_fl_index];
   TLSFBlockHeader* _blocks[_num_lists];
-
-  static uint32_t get_mapping(size_t size);
 
   void initialize(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing);
 
@@ -110,7 +112,7 @@ private:
 
   // If blk is not nullptr, blk is removed, otherwise the head of the free-list
   // corresponding to mapping is removed.
-  TLSFBlockHeader *remove_block(TLSFBlockHeader *blk, uint32_t mapping);
+  TLSFBlockHeader *remove_block(TLSFBlockHeader *blk, TLSFMapping mapping);
 
   // size is the number of bytes that should remain in blk. blk is shrinked to
   // size and a new block with the remaining blk->size - size is returned.
@@ -119,6 +121,32 @@ private:
   TLSFBlockHeader *get_next_phys_block(TLSFBlockHeader *blk);
 
   TLSFBlockHeader *get_block_containing_address(uintptr_t address);
+
+  // These are be calculated differently for generic and specific implementations. 
+  virtual size_t align_size(size_t size);
+  virtual inline TLSFMapping get_mapping(size_t size);
+  virtual inline uint32_t flatten_mapping(TLSFMapping mapping);
+  virtual TLSFMapping find_suitable_mapping(size_t target_size);
+  virtual void update_bitmap(TLSFMapping mapping, bool free_update);
+};
+
+class ZPageOptimizedTLSF : public TLSF {
+public:
+  ZPageOptimizedTLSF(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false);
+
+protected:
+  static const size_t _fl_index = 14;
+  static const size_t _sl_index_log2 = 2;
+  static const size_t _sl_index = (1 << _sl_index_log2);
+  static const size_t _num_lists = _fl_index * _sl_index;
+  static const size_t _mbs = 16;
+
+  // These are be calculated differently for generic and specific implementations. 
+  size_t align_size(size_t size) override;
+  TLSFMapping inline get_mapping(size_t size) override;
+  inline uint32_t flatten_mapping(TLSFMapping mapping) override;
+  TLSFMapping find_suitable_mapping(size_t target_size) override;
+  void update_bitmap(TLSFMapping mapping, bool free_update) override;
 };
 
 #endif // TLSF_HPP

@@ -8,6 +8,10 @@
 #include "TLSF.hpp"
 #include "TLSFUtil.inline.hpp"
 
+// Contains first- and second-level index to segregated lists
+// In the case of the optimized version, only the fl mapping is used.
+struct TLSFMapping { uint32_t fl, sl; };
+
 #ifndef NODEBUG
 static void print_blk(TLSFBlockHeader *blk) {
   std::cout << "Block (@ " << blk << ")\n" 
@@ -73,15 +77,17 @@ TLSF::TLSF(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing) {
 
 TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing) {
   TLSF *tlsf = reinterpret_cast<TLSF *>(initial_pool);
-  tlsf->initialize(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF), deferred_coalescing);
-  return tlsf;
+  return new(tlsf) TLSF(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF), deferred_coalescing);
 }
 
 void TLSF::clear(bool initial_block_allocated) {
   // Initialize bitmap and blocks
-  _flatmap = 0;
-  for(int i = 0; i < _num_lists; i++) {
-    _blocks[i] = nullptr;
+  _fl_bitmap = 0;
+  for(int i = 0; i < TLSF::_fl_index; i++) {
+    _sl_bitmap[i] = 0;
+    for(int j = 0; j < TLSF::_sl_index; j++) {
+      _blocks[i + j] = nullptr;
+    }
   }
 
   TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
@@ -113,6 +119,10 @@ void *TLSF::allocate(size_t size) {
 }
 
 void TLSF::free(void *address) {
+  if(address == nullptr) {
+    return;
+  }
+
   TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - _block_header_length);
 
   // Try to merge with adjacent blocks
@@ -195,9 +205,8 @@ void TLSF::print_phys_blocks() {
 }
 
 void TLSF::print_free_lists() {
-  print_flatmap();
   for(size_t i = 0; i < 64; i++) {
-    if((_flatmap & (1UL << i)) == 0) {
+    if((_fl_bitmap & (1UL << i)) == 0) {
       continue;
     }
     printf("FREE-LIST (%02ld): ", i);
@@ -211,7 +220,7 @@ void TLSF::print_free_lists() {
 }
 
 void TLSF::print_flatmap() {
-  print_binary(_flatmap);
+  print_binary(_fl_bitmap);
 }
 
 uint32_t TLSF::block_offset(TLSFBlockHeader *blk) {
@@ -226,16 +235,9 @@ TLSFBlockHeader *TLSF::block_address(uint32_t offset) {
     : reinterpret_cast<TLSFBlockHeader *>(offset + _block_start);
 }
 
-uint32_t TLSF::get_mapping(size_t size) {
-  int fl = TLSFUtil::ilog2(size);
-  int sl = size >> (fl - _sl_index_log2) ^ (1UL << _sl_index_log2);
-  return ((fl - _min_alloc_size_log2) << _sl_index_log2) + sl;
-}
-
 void TLSF::initialize(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing) {
   _deferred_coalescing = deferred_coalescing;
   _block_header_length = deferred_coalescing ? BLOCK_HEADER_LENGTH_SMALL : BLOCK_HEADER_LENGTH;
-  _mbs = deferred_coalescing ? 16 : 64;
 
   uintptr_t aligned_initial_block = TLSFUtil::align_up(initial_pool, _alignment);
   _block_start = aligned_initial_block;
@@ -249,9 +251,10 @@ void TLSF::initialize(uintptr_t initial_pool, size_t pool_size, bool deferred_co
 }
 
 void TLSF::insert_block(TLSFBlockHeader *blk) {
-  uint32_t mapping = get_mapping(blk->get_size());
+  TLSFMapping mapping = get_mapping(blk->get_size());
+  uint32_t flat_mapping = flatten_mapping(mapping);
 
-  TLSFBlockHeader *head = _blocks[mapping];
+  TLSFBlockHeader *head = _blocks[flat_mapping];
 
   // Insert the block into its corresponding free-list
   if(head != nullptr) {
@@ -259,34 +262,21 @@ void TLSF::insert_block(TLSFBlockHeader *blk) {
   }
   blk->next = block_offset(head);
   blk->prev = TLSFBlockHeader::NULL_OFFSET;
-  _blocks[mapping] = blk;
+  _blocks[flat_mapping] = blk;
 
   // Mark the block as free
   blk->mark_free();
 
-  // Indicate that the list has free blocks by updating bitmap
-  _flatmap |= (1 << mapping);
+  update_bitmap(mapping, true);
 }
 
 TLSFBlockHeader *TLSF::find_block(size_t size) {
-  // Round up to alignment and then mbs and then to the nearest size class
-  size_t aligned_size = TLSFUtil::align_up(TLSFUtil::align_up(size, _alignment), _mbs);
-  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
+  size_t aligned_size = align_size(size);
+  TLSFMapping mapping = find_suitable_mapping(aligned_size);
 
-  // With the mapping we search for a free block
-  uint32_t mapping = get_mapping(target_size);
-
-  // If the first-level index is out of bounds, the request cannot be fulfilled
-  if(mapping >= _num_lists) {
+  if(mapping.fl == 0 && mapping.sl == 0) {
     return nullptr;
   }
-
-  uint64_t above_mapping = _flatmap & (~0UL << mapping);
-  if(above_mapping == 0) {
-    return nullptr;
-  }
-
-  mapping = TLSFUtil::ffs(above_mapping);
 
   // By now we now that we have an available block to use
   TLSFBlockHeader *blk = remove_block(nullptr, mapping);
@@ -319,11 +309,12 @@ TLSFBlockHeader *TLSF::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBlockHeader *b
   return blk1;
 }
 
-TLSFBlockHeader *TLSF::remove_block(TLSFBlockHeader *blk, uint32_t mapping) {
+TLSFBlockHeader *TLSF::remove_block(TLSFBlockHeader *blk, TLSFMapping mapping) {
+  uint32_t flat_mapping = flatten_mapping(mapping);
   TLSFBlockHeader *target = blk;
 
   if(blk == nullptr) {
-    target = _blocks[mapping];
+    target = _blocks[flat_mapping];
   }
 
   assert(target != nullptr);
@@ -340,13 +331,13 @@ TLSFBlockHeader *TLSF::remove_block(TLSFBlockHeader *blk, uint32_t mapping) {
   target->mark_used();
 
   // If the block is the last one in the free-list we need to update
-  if(_blocks[mapping] == target) {
-    _blocks[mapping] = block_address(target->next);
+  if(_blocks[flat_mapping] == target) {
+    _blocks[flat_mapping] = block_address(target->next);
   }
 
   // If the block is the last one in the free-list, we mark it as empty
   if(target->next == TLSFBlockHeader::NULL_OFFSET) {
-    _flatmap &= ~(1UL << mapping);
+    update_bitmap(mapping, false);
   }
 
   return target;
@@ -397,3 +388,106 @@ TLSFBlockHeader *TLSF::get_block_containing_address(uintptr_t address) {
   return nullptr;
 }
 
+size_t TLSF::align_size(size_t size) {
+  return TLSFUtil::align_up(TLSFUtil::align_up(size, _alignment), _mbs);
+}
+
+TLSFMapping TLSF::get_mapping(size_t size) {
+  uint32_t fl = TLSFUtil::ilog2(size);
+  uint32_t fl2 = (1 << fl);
+  uint32_t sl = (size - fl2) * _sl_index / fl2;
+  return {fl, sl};
+}
+
+uint32_t TLSF::flatten_mapping(TLSFMapping mapping) {
+  return mapping.fl * mapping.sl + mapping.sl;
+}
+
+TLSFMapping TLSF::find_suitable_mapping(size_t aligned_size) {
+  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - TLSF::_sl_index_log2)) - 1;
+
+  // With the mapping we search for a free block
+  TLSFMapping mapping = get_mapping(target_size);
+
+  // If the first-level index is out of bounds, the request cannot be fulfilled
+  if(mapping.fl >= TLSF::_fl_index) {
+    return {0, 0};
+  }
+
+  uint32_t sl_map = _sl_bitmap[mapping.fl] & (~0UL << mapping.sl);
+  if(sl_map == 0) {
+    // No suitable block exists in the second level. Search in the next largest
+    // first-level instead
+    uint32_t fl_map = _fl_bitmap & (~0UL << (mapping.fl + 1));
+    if(fl_map == 0) {
+      // No suitable block exists.
+      return {0, 0};
+    }
+
+    mapping.fl = TLSFUtil::ffs(fl_map);
+    sl_map = _sl_bitmap[mapping.fl];
+  }
+
+  mapping.sl = TLSFUtil::ffs(sl_map);
+
+  return mapping;
+}
+
+void TLSF::update_bitmap(TLSFMapping mapping, bool free_update) {
+  if(free_update) {
+    _fl_bitmap |= (1 << mapping.fl);
+    _sl_bitmap[mapping.fl] |= (1 << mapping.sl);
+  } else {
+    _sl_bitmap[mapping.fl] &= ~(1 << mapping.sl);
+    if(_sl_bitmap[mapping.fl] == 0) {
+      _fl_bitmap &= ~(1 << mapping.fl);
+    }
+  }
+}
+
+ZPageOptimizedTLSF::ZPageOptimizedTLSF(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing) {
+  initialize(initial_pool, pool_size, deferred_coalescing);
+}
+
+size_t ZPageOptimizedTLSF::align_size(size_t size) {
+  return TLSFUtil::align_up(TLSFUtil::align_up(size, _alignment), _mbs);
+}
+
+TLSFMapping ZPageOptimizedTLSF::get_mapping(size_t size) {
+  int fl = TLSFUtil::ilog2(size);
+  int sl = size >> (fl - _sl_index_log2) ^ (1UL << _sl_index_log2);
+  return {(uint32_t)((fl - _min_alloc_size_log2) << _sl_index_log2) + sl, 0};
+}
+
+uint32_t ZPageOptimizedTLSF::flatten_mapping(TLSFMapping mapping) {
+  return mapping.fl;
+}
+
+TLSFMapping ZPageOptimizedTLSF::find_suitable_mapping(size_t aligned_size) {
+  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - ZPageOptimizedTLSF::_sl_index_log2)) - 1;
+
+  // With the mapping we search for a free block
+  TLSFMapping mapping = get_mapping(target_size);
+
+  // If the first-level index is out of bounds, the request cannot be fulfilled
+  if(mapping.fl >= ZPageOptimizedTLSF::_num_lists) {
+    return {0, 0};
+  }
+
+  uint64_t above_mapping = _fl_bitmap & (~0UL << mapping.fl);
+  if(above_mapping == 0) {
+    return {0, 0};
+  }
+
+  mapping.fl = TLSFUtil::ffs(above_mapping);
+
+  return mapping;
+}
+
+void ZPageOptimizedTLSF::update_bitmap(TLSFMapping mapping, bool free_update) {
+  if(free_update) {
+    _fl_bitmap |= (1UL << mapping.fl);
+  } else {
+    _fl_bitmap &= ~(1UL << mapping.fl);
+  }
+}
