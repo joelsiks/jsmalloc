@@ -46,11 +46,28 @@ public:
   void unmark_last();
 };
 
-class TLSF {
+class TLSFBaseConfig {
+public:
+  static const size_t FirstLevelIndex = 32;
+  static const size_t SecondLevelIndexLog2 = 5;
+  static const size_t MBS = 32;
+  static const bool UseSecondLevels = true;
+};
+
+class TLSFZOptimizedConfig {
+public:
+  static const size_t FirstLevelIndex = 14;
+  static const size_t SecondLevelIndexLog2 = 2;
+  static const size_t MBS = 16;
+  static const bool UseSecondLevels = false;
+};
+
+template <typename Config>
+class TLSFBase {
 public:
   // Constructors
-  TLSF(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false);
-  static TLSF *create(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false);
+  TLSFBase(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false);
+  static TLSFBase *create(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false);
 
   // Calling this function will erase all metadata about allocated objects inside
   // the allocator, allowing their location in memory to be overriden by new
@@ -74,18 +91,17 @@ public:
   void print_flatmap();
 
 protected:
-  TLSF() {}
+  TLSFBase() {}
 
-  // TLSF Structure Parameters (FLI, SLI & MBS)
   static const size_t _min_alloc_size = 16;
   static const size_t _min_alloc_size_log2 = 4;
   static const size_t _alignment = 8;
-  static const size_t _mbs = 32;
 
-  static const size_t _fl_index = 32;
-  static const size_t _sl_index_log2 = 5;
+  static const size_t _fl_index = Config::FirstLevelIndex;
+  static const size_t _sl_index_log2 = Config::SecondLevelIndexLog2;
   static const size_t _sl_index = (1 << _sl_index_log2);
   static const size_t _num_lists = _fl_index * _sl_index;
+  static const size_t _mbs = Config::MBS;
 
   bool _deferred_coalescing;
   size_t _block_header_length;
@@ -93,8 +109,9 @@ protected:
   uintptr_t _block_start;
   size_t _pool_size;
 
+
   uint64_t _fl_bitmap;
-  uint32_t _sl_bitmap[_fl_index];
+  uint32_t _sl_bitmap[Config::UseSecondLevels ? _fl_index : 0];
   TLSFBlockHeader* _blocks[_num_lists];
 
   void initialize(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing);
@@ -123,30 +140,27 @@ protected:
   TLSFBlockHeader *get_block_containing_address(uintptr_t address);
 
   // These are be calculated differently for generic and specific implementations. 
-  virtual size_t align_size(size_t size);
-  virtual inline TLSFMapping get_mapping(size_t size);
-  virtual inline uint32_t flatten_mapping(TLSFMapping mapping);
-  virtual TLSFMapping find_suitable_mapping(size_t target_size);
-  virtual void update_bitmap(TLSFMapping mapping, bool free_update);
+  size_t align_size(size_t size);
+  TLSFMapping get_mapping(size_t size);
+  uint32_t flatten_mapping(TLSFMapping mapping);
+  TLSFMapping find_suitable_mapping(size_t target_size);
+  void update_bitmap(TLSFMapping mapping, bool free_update);
 };
 
-class ZPageOptimizedTLSF : public TLSF {
+class TLSF : public TLSFBase<TLSFBaseConfig> {
 public:
-  ZPageOptimizedTLSF(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false);
+  TLSF(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false)
+    : TLSFBase(initial_pool, pool_size, deferred_coalescing) {}
 
-protected:
-  static const size_t _fl_index = 14;
-  static const size_t _sl_index_log2 = 2;
-  static const size_t _sl_index = (1 << _sl_index_log2);
-  static const size_t _num_lists = _fl_index * _sl_index;
-  static const size_t _mbs = 16;
+  static TLSF *create(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false);
+};
 
-  // These are be calculated differently for generic and specific implementations. 
-  size_t align_size(size_t size) override;
-  TLSFMapping inline get_mapping(size_t size) override;
-  inline uint32_t flatten_mapping(TLSFMapping mapping) override;
-  TLSFMapping find_suitable_mapping(size_t target_size) override;
-  void update_bitmap(TLSFMapping mapping, bool free_update) override;
+class ZPageOptimizedTLSF : public TLSFBase<TLSFZOptimizedConfig> {
+public:
+  ZPageOptimizedTLSF(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false)
+    : TLSFBase(initial_pool, pool_size, deferred_coalescing) {}
+
+  static ZPageOptimizedTLSF *create(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing = false);
 };
 
 #endif // TLSF_HPP
