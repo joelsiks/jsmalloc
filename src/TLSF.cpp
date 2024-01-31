@@ -78,8 +78,8 @@ void TLSFBlockHeader::unmark_last() {
 }
 
 template<typename Config>
-TLSFBase<Config>::TLSFBase(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing) {
-  initialize(initial_pool, pool_size, deferred_coalescing);
+TLSFBase<Config>::TLSFBase(uintptr_t initial_pool, size_t pool_size) {
+  initialize(initial_pool, pool_size);
 }
 
 template<typename Config>
@@ -131,7 +131,7 @@ void TLSFBase<Config>::free(void *address) {
   TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - _block_header_length);
 
   // Try to merge with adjacent blocks
-  if(!_deferred_coalescing) {
+  if(!Config::DeferredCoalescing) {
     TLSFBlockHeader *prev_blk = blk->prev_phys_block;
     TLSFBlockHeader *next_blk = get_next_phys_block(blk);
 
@@ -203,6 +203,23 @@ void TLSFBase<Config>::coalesce_blocks() {
 }
 
 template<typename Config>
+double TLSFBase<Config>::header_overhead() {
+  // Iterate over all blocks.
+  TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
+
+  size_t headers = 0;
+  size_t blocks = 0;
+
+  while(current_blk != nullptr) {
+    headers += _block_header_length;
+    blocks += current_blk->get_size();
+    current_blk = get_next_phys_block(current_blk);
+  }
+
+  return (double)headers / blocks;
+}
+
+template<typename Config>
 void TLSFBase<Config>::print_phys_blocks() {
   TLSFBlockHeader *current = (TLSFBlockHeader *)_block_start;
 
@@ -214,18 +231,39 @@ void TLSFBase<Config>::print_phys_blocks() {
 
 template<typename Config>
 void TLSFBase<Config>::print_free_lists() {
+
   for(size_t i = 0; i < 64; i++) {
-    if((_fl_bitmap & (1UL << i)) == 0) {
-      continue;
+      if((_fl_bitmap & (1UL << i)) == 0) {
+        continue;
+      }
+
+    if(Config::UseSecondLevels) {
+      for(size_t j = 0; j < 32; j++) {
+        if((_sl_bitmap[i] & (1UL << j)) == 0) {
+          continue;
+        }
+
+        printf("FREE-LIST (%02ld): ", i * _fl_index + j);
+        TLSFBlockHeader *current = _blocks[flatten_mapping({i, j})];
+        while(current != nullptr) {
+          std::cout << current << " -> ";
+          current = current->next;
+        }
+        std::cout << "END" << std::endl;
+      }
+
+    } else {
+      printf("FREE-LIST (%02ld): ", i);
+      TLSFBlockHeader *current = _blocks[i];
+      while(current != nullptr) {
+        std::cout << current << " -> ";
+        current = current->next;
+      }
+
+      std::cout << "END" << std::endl;
     }
-    printf("FREE-LIST (%02ld): ", i);
-    TLSFBlockHeader *current = _blocks[i];
-    while(current != nullptr) {
-      std::cout << current << " -> ";
-      current = current->next;
-    }
-    std::cout << "END" << std::endl;
   }
+
 }
 
 template<typename Config>
@@ -234,9 +272,8 @@ void TLSFBase<Config>::print_flatmap() {
 }
 
 template<typename Config>
-void TLSFBase<Config>::initialize(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing) {
-  _deferred_coalescing = deferred_coalescing;
-  _block_header_length = deferred_coalescing ? BLOCK_HEADER_LENGTH_SMALL : BLOCK_HEADER_LENGTH;
+void TLSFBase<Config>::initialize(uintptr_t initial_pool, size_t pool_size) {
+  _block_header_length = Config::DeferredCoalescing ? BLOCK_HEADER_LENGTH_SMALL : BLOCK_HEADER_LENGTH;
 
   uintptr_t aligned_initial_block = TLSFUtil::align_up(initial_pool, _alignment);
   _block_start = aligned_initial_block;
@@ -303,9 +340,11 @@ TLSFBlockHeader *TLSFBase<Config>::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBl
 
   // Make sure the next physical block points to the now coalesced block instead
   // of blk2
-  TLSFBlockHeader *next_phys = get_next_phys_block(blk1);
-  if(next_phys != nullptr) {
-    next_phys->prev_phys_block = blk1;
+  if(!Config::DeferredCoalescing) {
+    TLSFBlockHeader *next_phys = get_next_phys_block(blk1);
+    if(next_phys != nullptr) {
+      next_phys->prev_phys_block = blk1;
+    }
   }
 
   return blk1;
@@ -415,13 +454,13 @@ uint32_t TLSFBase<TLSFBaseConfig>::flatten_mapping(TLSFMapping mapping) {
 
 template <>
 TLSFMapping TLSFBase<TLSFBaseConfig>::find_suitable_mapping(size_t aligned_size) {
-  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - TLSF::_sl_index_log2)) - 1;
+  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
 
   // With the mapping we search for a free block
   TLSFMapping mapping = get_mapping(target_size);
 
   // If the first-level index is out of bounds, the request cannot be fulfilled
-  if(mapping.fl >= TLSF::_fl_index) {
+  if(mapping.fl >= _fl_index) {
     return {0, TLSFMapping::UNABLE_TO_FIND};
   }
 
@@ -477,13 +516,13 @@ uint32_t TLSFBase<TLSFZOptimizedConfig>::flatten_mapping(TLSFMapping mapping) {
 
 template <>
 TLSFMapping TLSFBase<TLSFZOptimizedConfig>::find_suitable_mapping(size_t aligned_size) {
-  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - ZPageOptimizedTLSF::_sl_index_log2)) - 1;
+  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
 
   // With the mapping we search for a free block
   TLSFMapping mapping = get_mapping(target_size);
 
   // If the first-level index is out of bounds, the request cannot be fulfilled
-  if(mapping.fl >= ZPageOptimizedTLSF::_num_lists) {
+  if(mapping.fl >= _num_lists) {
     return {0, TLSFMapping::UNABLE_TO_FIND};
   }
 
@@ -506,12 +545,12 @@ void TLSFBase<TLSFZOptimizedConfig>::update_bitmap(TLSFMapping mapping, bool fre
   }
 }
 
-TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing) {
+TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
   TLSF *tlsf = reinterpret_cast<TLSF *>(initial_pool);
-  return new(tlsf) TLSF(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF), deferred_coalescing);
+  return new(tlsf) TLSF(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF));
 }
 
-ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t pool_size, bool deferred_coalescing) {
+ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t pool_size) {
   ZPageOptimizedTLSF *tlsf = reinterpret_cast<ZPageOptimizedTLSF *>(initial_pool);
-  return new(tlsf) ZPageOptimizedTLSF(initial_pool + sizeof(ZPageOptimizedTLSF), pool_size - sizeof(ZPageOptimizedTLSF), deferred_coalescing);
+  return new(tlsf) ZPageOptimizedTLSF(initial_pool + sizeof(ZPageOptimizedTLSF), pool_size - sizeof(ZPageOptimizedTLSF));
 }
