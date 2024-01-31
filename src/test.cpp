@@ -48,7 +48,7 @@ void constructor_test() {
 void free_range_test() {
   const size_t pool_size = 32 * 16;
   uint8_t pool[pool_size];
-  TLSF t((uintptr_t)&pool, pool_size);
+  ZPageOptimizedTLSF t((uintptr_t)&pool, pool_size);
   t.clear(true);
   t.print_phys_blocks();
   t.free_range((void *)((uintptr_t)&pool + 64), 64);
@@ -100,6 +100,6 @@ int main() {
   constructor_test();
   basic_test();
   //free_range_test();
-  //deferred_coalescing_test();
+  deferred_coalescing_test();
   optimized_test();
 }

@@ -55,14 +55,6 @@ public:
   void *allocate(size_t size);
   void free(void *address);
 
-  // This assumes that the range that is described by (address -> (address + range))
-  // contains one allocated block and no more.
-  void free_range(void *address, size_t range);
-
-  // Manually trigger block coalescing. Usually only needed if allocator is
-  // configured with deferred_coalescing.
-  void coalesce_blocks();
-
   // Metrics
   double header_overhead();
   double internal_fragmentation();
@@ -162,6 +154,13 @@ public:
     : TLSFBase(initial_pool, pool_size) {}
 
   static ZPageOptimizedTLSF *create(uintptr_t initial_pool, size_t pool_size);
+
+  // This assumes that the range that is described by (address -> (address + range))
+  // contains one allocated block and no more.
+  void free_range(void *address, size_t range);
+
+  // Manually trigger block coalescing.
+  void coalesce_blocks();
 };
 
 #endif // TLSF_HPP
