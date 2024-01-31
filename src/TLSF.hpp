@@ -19,20 +19,14 @@ private:
   static const size_t _BlockLastMask = 1 << 1;
 
 public:
-  static const uint32_t NULL_OFFSET = std::numeric_limits<uint32_t>::max();
-
   // Size does not include header size and represents the usable chunk of the block.
   size_t size;
 
-  // Indicates an offset from the start of the first block in the allocator.
-  // next and prev are only used in free (unused) blocks
-  uint32_t next;
-  uint32_t prev;
+  // next and prev are only used in free (unused) blocks for the optimized config.
+  TLSFBlockHeader *next;
+  TLSFBlockHeader *prev;
 
   TLSFBlockHeader *prev_phys_block;
-
-  uint32_t get_next(bool use_prev_phys);
-  uint32_t get_prev(bool use_prev_phys);
 
   size_t get_size();
 
@@ -44,22 +38,6 @@ public:
 
   void mark_last();
   void unmark_last();
-};
-
-class TLSFBaseConfig {
-public:
-  static const size_t FirstLevelIndex = 32;
-  static const size_t SecondLevelIndexLog2 = 5;
-  static const size_t MBS = 32;
-  static const bool UseSecondLevels = true;
-};
-
-class TLSFZOptimizedConfig {
-public:
-  static const size_t FirstLevelIndex = 14;
-  static const size_t SecondLevelIndexLog2 = 2;
-  static const size_t MBS = 16;
-  static const bool UseSecondLevels = false;
 };
 
 template <typename Config>
@@ -145,6 +123,22 @@ protected:
   uint32_t flatten_mapping(TLSFMapping mapping);
   TLSFMapping find_suitable_mapping(size_t target_size);
   void update_bitmap(TLSFMapping mapping, bool free_update);
+};
+
+class TLSFBaseConfig {
+public:
+  static const size_t FirstLevelIndex = 32;
+  static const size_t SecondLevelIndexLog2 = 5;
+  static const size_t MBS = 32;
+  static const bool UseSecondLevels = true;
+};
+
+class TLSFZOptimizedConfig {
+public:
+  static const size_t FirstLevelIndex = 14;
+  static const size_t SecondLevelIndexLog2 = 2;
+  static const size_t MBS = 16;
+  static const bool UseSecondLevels = false;
 };
 
 class TLSF : public TLSFBase<TLSFBaseConfig> {

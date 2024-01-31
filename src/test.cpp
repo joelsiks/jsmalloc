@@ -90,8 +90,8 @@ void CUnit_initialize_test() {
 }
 
 void optimized_test() {
-  uint8_t pool[1000 * 1024];
-  ZPageOptimizedTLSF t((uintptr_t)&pool, 1000 * 1024);
+  uint8_t pool[500 * 1024];
+  ZPageOptimizedTLSF t((uintptr_t)&pool, 500 * 1024);
 
   t.allocate(1);
 }

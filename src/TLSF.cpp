@@ -10,7 +10,10 @@
 
 // Contains first- and second-level index to segregated lists
 // In the case of the optimized version, only the fl mapping is used.
-struct TLSFMapping { uint32_t fl, sl; };
+struct TLSFMapping { 
+  static const uint32_t UNABLE_TO_FIND = (uint32_t)-1;
+  uint32_t fl, sl;
+};
 
 template class TLSFBase<TLSFBaseConfig>;
 template class TLSFBase<TLSFZOptimizedConfig>;
@@ -23,8 +26,8 @@ static void print_blk(TLSFBlockHeader *blk) {
             << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << "\n";
 
   if(blk->is_free()) {
-    std::cout << " next=" << ((blk->next == TLSFBlockHeader::NULL_OFFSET) ? "NULL" : std::to_string(blk->next))
-              << " prev=" << ((blk->prev == TLSFBlockHeader::NULL_OFFSET) ? "NULL" : std::to_string(blk->prev))
+    std::cout << " next=" << blk->next << ", "
+              << " prev=" << blk->prev 
               << std::endl;
   }
 }
@@ -219,7 +222,7 @@ void TLSFBase<Config>::print_free_lists() {
     TLSFBlockHeader *current = _blocks[i];
     while(current != nullptr) {
       std::cout << current << " -> ";
-      current = block_address(current->next);
+      current = current->next;
     }
     std::cout << "END" << std::endl;
   }
@@ -228,20 +231,6 @@ void TLSFBase<Config>::print_free_lists() {
 template<typename Config>
 void TLSFBase<Config>::print_flatmap() {
   print_binary(_fl_bitmap);
-}
-
-template<typename Config>
-uint32_t TLSFBase<Config>::block_offset(TLSFBlockHeader *blk) {
-  return (blk == nullptr)
-    ? TLSFBlockHeader::NULL_OFFSET
-    : ((uintptr_t)blk - _block_start);
-}
-
-template<typename Config>
-TLSFBlockHeader *TLSFBase<Config>::block_address(uint32_t offset) {
-  return (offset == TLSFBlockHeader::NULL_OFFSET) 
-    ? nullptr 
-    : reinterpret_cast<TLSFBlockHeader *>(offset + _block_start);
 }
 
 template<typename Config>
@@ -269,10 +258,10 @@ void TLSFBase<Config>::insert_block(TLSFBlockHeader *blk) {
 
   // Insert the block into its corresponding free-list
   if(head != nullptr) {
-    head->prev = block_offset(blk);
+    head->prev = blk;
   }
-  blk->next = block_offset(head);
-  blk->prev = TLSFBlockHeader::NULL_OFFSET;
+  blk->next = head;
+  blk->prev = nullptr;
   _blocks[flat_mapping] = blk;
 
   // Mark the block as free
@@ -286,7 +275,7 @@ TLSFBlockHeader *TLSFBase<Config>::find_block(size_t size) {
   size_t aligned_size = align_size(size);
   TLSFMapping mapping = find_suitable_mapping(aligned_size);
 
-  if(mapping.fl == 0 && mapping.sl == 0) {
+  if(mapping.sl == TLSFMapping::UNABLE_TO_FIND) {
     return nullptr;
   }
 
@@ -333,12 +322,12 @@ TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMappin
 
   assert(target != nullptr);
 
-  if(target->next != TLSFBlockHeader::NULL_OFFSET) {
-    block_address(target->next)->prev = target->prev;
+  if(target->next != nullptr) {
+    target->next->prev = target->prev;
   }
 
-  if(target->prev != TLSFBlockHeader::NULL_OFFSET) {
-    block_address(target->prev)->next = target->next;
+  if(target->prev != nullptr) {
+    target->prev->next = target->next;
   }
 
   // Mark the block as used (no longer free)
@@ -346,11 +335,11 @@ TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMappin
 
   // If the block is the last one in the free-list we need to update
   if(_blocks[flat_mapping] == target) {
-    _blocks[flat_mapping] = block_address(target->next);
+    _blocks[flat_mapping] = target->next;
   }
 
   // If the block is the last one in the free-list, we mark it as empty
-  if(target->next == TLSFBlockHeader::NULL_OFFSET) {
+  if(target->next == nullptr) {
     update_bitmap(mapping, false);
   }
 
@@ -433,7 +422,7 @@ TLSFMapping TLSFBase<TLSFBaseConfig>::find_suitable_mapping(size_t aligned_size)
 
   // If the first-level index is out of bounds, the request cannot be fulfilled
   if(mapping.fl >= TLSF::_fl_index) {
-    return {0, 0};
+    return {0, TLSFMapping::UNABLE_TO_FIND};
   }
 
   uint32_t sl_map = _sl_bitmap[mapping.fl] & (~0UL << mapping.sl);
@@ -443,7 +432,7 @@ TLSFMapping TLSFBase<TLSFBaseConfig>::find_suitable_mapping(size_t aligned_size)
     uint32_t fl_map = _fl_bitmap & (~0UL << (mapping.fl + 1));
     if(fl_map == 0) {
       // No suitable block exists.
-      return {0, 0};
+      return {0, TLSFMapping::UNABLE_TO_FIND};
     }
 
     mapping.fl = TLSFUtil::ffs(fl_map);
@@ -495,12 +484,12 @@ TLSFMapping TLSFBase<TLSFZOptimizedConfig>::find_suitable_mapping(size_t aligned
 
   // If the first-level index is out of bounds, the request cannot be fulfilled
   if(mapping.fl >= ZPageOptimizedTLSF::_num_lists) {
-    return {0, 0};
+    return {0, TLSFMapping::UNABLE_TO_FIND};
   }
 
   uint64_t above_mapping = _fl_bitmap & (~0UL << mapping.fl);
   if(above_mapping == 0) {
-    return {0, 0};
+    return {0, TLSFMapping::UNABLE_TO_FIND};
   }
 
   mapping.fl = TLSFUtil::ffs(above_mapping);
