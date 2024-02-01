@@ -4,7 +4,7 @@
 #ifndef TLSF_UTIL_INLINE_HPP
 #define TLSF_UTIL_INLINE_HPP
 
-#include <limits.h>
+#include <climits>
 
 #include "TLSFUtil.hpp"
 

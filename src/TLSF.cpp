@@ -148,6 +148,12 @@ void TLSFBase<Config>::free(void *address) {
 }
 
 template<typename Config>
+size_t TLSFBase<Config>::get_allocated_size(void *address) {
+  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - _block_header_length);
+  return blk->get_size();
+}
+
+template<typename Config>
 double TLSFBase<Config>::header_overhead() {
   // Iterate over all blocks.
   TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);

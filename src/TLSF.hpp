@@ -55,6 +55,8 @@ public:
   void *allocate(size_t size);
   void free(void *address);
 
+  size_t get_allocated_size(void *address);
+
   // Metrics
   double header_overhead();
   double internal_fragmentation();
