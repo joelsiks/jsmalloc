@@ -283,9 +283,9 @@ TLSFBlockHeader *TLSFBase<Config>::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBl
   // header size
   blk1->size += _block_header_length + blk2->get_size();
 
-  // Make sure the next physical block points to the now coalesced block instead
-  // of blk2
+  // We only want to re-point the prev_phys_block ptr if we are not deferring coalescing.
   if(!Config::DeferredCoalescing) {
+    // Make sure the next physical block points to the now coalesced block instead of blk2
     TLSFBlockHeader *next_phys = get_next_phys_block(blk1);
     if(next_phys != nullptr) {
       next_phys->prev_phys_block = blk1;
@@ -394,7 +394,7 @@ TLSFMapping TLSFBase<TLSFBaseConfig>::get_mapping(size_t size) {
 
 template <>
 uint32_t TLSFBase<TLSFBaseConfig>::flatten_mapping(TLSFMapping mapping) {
-    return mapping.fl * mapping.sl + mapping.sl;
+    return mapping.fl * _sl_index + mapping.sl;
 }
 
 template <>

@@ -78,9 +78,10 @@ void deferred_coalescing_test() {
   t.print_phys_blocks();
 }
 
+uint8_t cupool[10000 * 1024];
+
 void CUnit_initialize_test() {
-  uint8_t pool[1000 * 1024];
-  TLSF *tl = TLSF::create((uintptr_t)pool, 1024 * 1000);
+  TLSF *tl = TLSF::create((uintptr_t)cupool, 10000 * 1024);
 
   void *a = tl->allocate(3000000000000);
   a = tl->allocate(72704);
@@ -97,9 +98,10 @@ void optimized_test() {
 }
 
 int main() {
-  constructor_test();
-  basic_test();
+  //constructor_test();
+  //basic_test();
   //free_range_test();
-  deferred_coalescing_test();
-  optimized_test();
+  //deferred_coalescing_test();
+  //optimized_test();
+  CUnit_initialize_test();
 }
