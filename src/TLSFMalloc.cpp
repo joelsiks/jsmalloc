@@ -50,6 +50,10 @@ extern "C" {
   }
 
   void *realloc(void *ptr, size_t size) {
+    if(tlsf_allocator == nullptr) {
+      initialize_tlsf();
+    }
+
     if(ptr == NULL) {
       return malloc(size);
     } else if(ptr == NULL && size == 0) {

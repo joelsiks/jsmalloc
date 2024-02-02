@@ -107,6 +107,7 @@ void TLSFBase<Config>::clear(bool initial_block_allocated) {
   }
 }
 
+
 template<typename Config>
 void *TLSFBase<Config>::allocate(size_t size) {
   TLSFBlockHeader *blk = find_block(size);
@@ -545,17 +546,16 @@ void ZPageOptimizedTLSF::free_range(void *address, size_t range) {
 
 void ZPageOptimizedTLSF::coalesce_blocks() {
   TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
-  TLSFBlockHeader *next_blk = get_next_phys_block(current_blk);
 
-  while(next_blk != nullptr) {
-    if(current_blk->is_free() && next_blk->is_free()) {
+  while (current_blk != nullptr) {
+    TLSFBlockHeader *next_blk = get_next_phys_block(current_blk);
+
+    if(next_blk != nullptr && current_blk->is_free() && next_blk->is_free()) {
       current_blk = TLSFBase::coalesce_blocks(current_blk, next_blk);
       insert_block(current_blk);
     } else {
       current_blk = next_blk;
     }
-
-    next_blk = get_next_phys_block(current_blk);
   }
 }
 
