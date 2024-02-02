@@ -8,46 +8,15 @@
 #include "TLSF.hpp"
 #include "TLSFUtil.inline.hpp"
 
+template class TLSFBase<TLSFBaseConfig>;
+template class TLSFBase<TLSFZOptimizedConfig>;
+
 // Contains first- and second-level index to segregated lists
 // In the case of the optimized version, only the fl mapping is used.
 struct TLSFMapping { 
   static const uint32_t UNABLE_TO_FIND = (uint32_t)-1;
-  uint32_t fl, sl;
+  size_t fl, sl;
 };
-
-template class TLSFBase<TLSFBaseConfig>;
-template class TLSFBase<TLSFZOptimizedConfig>;
-
-#ifndef NODEBUG
-static void print_blk(TLSFBlockHeader *blk) {
-  std::cout << "Block (@ " << blk << ")\n" 
-            << " size=" << blk->get_size() << "\n"
-            << " prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n"
-            << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << "\n";
-
-  if(blk->is_free()) {
-    std::cout << " next=" << blk->next << ", "
-              << " prev=" << blk->prev 
-              << std::endl;
-  }
-}
-
-static void print_binary(uint32_t value) {
-  for (int i = 31; i >= 0; --i) {
-    std::cout << ((value >> i) & 1);
-    if (i % 4 == 0) std::cout << ' ';
-  }
-  std::cout << std::endl;
-}
-
-static void print_binary(uint64_t value) {
-  for (int i = 63; i >= 0; --i) {
-    std::cout << ((value >> i) & 1);
-    if (i % 4 == 0) std::cout << ' ';
-  }
-  std::cout << std::endl;
-}
-#endif
 
 size_t TLSFBlockHeader::get_size() {
   return size & ~(_BlockFreeMask | _BlockLastMask);
@@ -77,6 +46,19 @@ void TLSFBlockHeader::unmark_last() {
   size &= ~_BlockLastMask;
 }
 
+static void print_blk(TLSFBlockHeader *blk) {
+  std::cout << "Block (@ " << blk << ")\n" 
+            << " size=" << blk->get_size() << "\n"
+            << " prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n"
+            << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << "\n";
+
+  if(blk->is_free()) {
+    std::cout << " next=" << blk->next << ", "
+              << " prev=" << blk->prev 
+              << std::endl;
+  }
+}
+
 template<typename Config>
 TLSFBase<Config>::TLSFBase(uintptr_t initial_pool, size_t pool_size) {
   initialize(initial_pool, pool_size);
@@ -89,7 +71,7 @@ void TLSFBase<Config>::clear(bool initial_block_allocated) {
   for(size_t i = 0; i < _fl_index; i++) {
     _sl_bitmap[i] = 0;
     for(size_t j = 0; j < _sl_index; j++) {
-      _blocks[i + j] = nullptr;
+      _blocks[i * _sl_index + j] = nullptr;
     }
   }
 
@@ -105,6 +87,8 @@ void TLSFBase<Config>::clear(bool initial_block_allocated) {
   } else {
     blk->mark_used();
   }
+
+  blk->mark_last();
 }
 
 
@@ -173,7 +157,7 @@ double TLSFBase<Config>::header_overhead() {
 
 template<typename Config>
 void TLSFBase<Config>::print_phys_blocks() {
-  TLSFBlockHeader *current = (TLSFBlockHeader *)_block_start;
+  TLSFBlockHeader *current = reinterpret_cast<TLSFBlockHeader *>(_block_start);
 
   while(current != nullptr) {
     print_blk(current);
@@ -216,11 +200,6 @@ void TLSFBase<Config>::print_free_lists() {
     }
   }
 
-}
-
-template<typename Config>
-void TLSFBase<Config>::print_flatmap() {
-  print_binary(_fl_bitmap);
 }
 
 template<typename Config>
@@ -286,9 +265,15 @@ TLSFBlockHeader *TLSFBase<Config>::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBl
   remove_block(blk1, get_mapping(blk1->get_size()));
   remove_block(blk2, get_mapping(blk2->get_size()));
 
+  bool is_last = blk2->is_last();
+
   // Combine the blocks by adding the size of blk2 to block1 and also the block
   // header size
   blk1->size += _block_header_length + blk2->get_size();
+
+  if(is_last) {
+    blk1->mark_last();
+  }
 
   // We only want to re-point the prev_phys_block ptr if we are not deferring coalescing.
   if(!Config::DeferredCoalescing) {
@@ -340,6 +325,7 @@ TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMappin
 template<typename Config>
 TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size) {
   size_t remainder_size = blk->get_size() - _block_header_length - size;
+  bool is_last = blk->is_last();
 
   blk->size = size;
 
@@ -348,10 +334,11 @@ TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size
   remainder_blk->size = remainder_size;
   remainder_blk->prev_phys_block = blk;
 
-  // Update the next phys block's previous block to remainder_blk block instead
-  // of blk
-  TLSFBlockHeader *next_phys = get_next_phys_block(remainder_blk);
-  if(next_phys != nullptr) {
+  if(is_last) {
+    blk->unmark_last();
+    remainder_blk->mark_last();
+  } else if(!Config::DeferredCoalescing) {
+    TLSFBlockHeader *next_phys = get_next_phys_block(remainder_blk);
     next_phys->prev_phys_block = remainder_blk;
   }
 
@@ -360,26 +347,25 @@ TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size
 
 template<typename Config>
 TLSFBlockHeader *TLSFBase<Config>::get_next_phys_block(TLSFBlockHeader *blk) {
-  uintptr_t pool_end = _block_start + _pool_size;
-  uintptr_t next_blk = (uintptr_t)blk + _block_header_length + blk->get_size();
-  return next_blk < pool_end ? (TLSFBlockHeader *)next_blk : nullptr;
+  return blk->is_last() 
+    ? nullptr 
+    : (TLSFBlockHeader *)((uintptr_t)blk + _block_header_length + blk->get_size());
 }
 
 template<typename Config>
 TLSFBlockHeader *TLSFBase<Config>::get_block_containing_address(uintptr_t address) {
   uintptr_t target_addr = (uintptr_t)address;
-  uintptr_t physical_end = _block_start + _pool_size;
-  uintptr_t current = _block_start;
+  TLSFBlockHeader *current = reinterpret_cast<TLSFBlockHeader *>(_block_start);
 
-  while(current <= physical_end) {
-    TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(current);
-    uintptr_t current_end = current + _block_header_length + current_blk->get_size();
+  while(current != nullptr) {
+    uintptr_t start = (uintptr_t)current;
+    uintptr_t end = start + _block_header_length + current->get_size();
 
-    if(target_addr >= current && target_addr <= current_end) {
-      return current_blk;
+    if(target_addr >= start && target_addr <= end) {
+      return current;
     }
 
-    current = current + current_blk->get_size() + _block_header_length;
+    current = get_next_phys_block(current);
   }
 
   return nullptr;
@@ -397,7 +383,6 @@ TLSFMapping TLSFBase<TLSFBaseConfig>::get_mapping(size_t size) {
   uint32_t sl = (size - fl2) * _sl_index / fl2;
   return {fl, sl};
 }
-
 
 template <>
 uint32_t TLSFBase<TLSFBaseConfig>::flatten_mapping(TLSFMapping mapping) {
@@ -448,7 +433,6 @@ void TLSFBase<TLSFBaseConfig>::update_bitmap(TLSFMapping mapping, bool free_upda
   }
 }
 
-
 template <>
 size_t TLSFBase<TLSFZOptimizedConfig>::align_size(size_t size) {
   return TLSFUtil::align_up(TLSFUtil::align_up(size, _alignment), _mbs);
@@ -458,7 +442,8 @@ template <>
 TLSFMapping TLSFBase<TLSFZOptimizedConfig>::get_mapping(size_t size) {
   int fl = TLSFUtil::ilog2(size);
   int sl = size >> (fl - _sl_index_log2) ^ (1UL << _sl_index_log2);
-  return {(uint32_t)((fl - _min_alloc_size_log2) << _sl_index_log2) + sl, 0};
+  size_t mapping = ((fl - _min_alloc_size_log2) << _sl_index_log2) + sl;
+  return {mapping > _num_lists ? _num_lists - 1 : mapping, 0};
 }
 
 template <>
