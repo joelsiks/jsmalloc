@@ -11,7 +11,7 @@ The implementation is written in C++14 for 64-bit machines exclusively and uses 
 
 ## Real-World Testing
 
-To easily test the allocator in practice using real-world programs we have provided a wrapper around malloc/calloc and free (no realloc, strdup, etc..).
+To easily test the allocator in practice using real-world programs we have provided a wrapper around malloc/calloc and free.
 To compile a shared library which can be preloaded when running a program, run:
 ```bash
 make sharedlib # Produces a file called libtlsf.so
@@ -20,13 +20,11 @@ LD_PRELOAD=./libtlsf.so ./<some program>
 
 ## TODO
 
-Print free-lists
-
 Fragmentation metrics
-    - Overhead due to block header
     - Internal fragmentation (wasted space du to alignment)
-    - External fragmentation [calc](https://stackoverflow.com/questions/4586972/how-to-calculate-fragmentation).
+    - External fragmentation [calc](https://stackoverflow.com/questions/4586972/how-to-calculate-fragmentation)
 
+Utforska concurrency.
 
 ## Author
 Joel Sikström
