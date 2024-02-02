@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <iostream>
+#include <chrono>
 
 #include "TLSF.hpp"
 
@@ -97,11 +98,32 @@ void optimized_test() {
   t.allocate(1);
 }
 
+void TLSF_test4() {
+  size_t pool_size = 2000 * 1024;
+  uint8_t pool1[2000 * 1024];
+  TLSF alloc((uintptr_t)pool1, pool_size);
+  
+  auto start_time = std::chrono::high_resolution_clock::now();
+  alloc.allocate(40);
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
+  std::cout << "General " << duration.count() << std::endl;;
+
+  uint8_t pool2[2000 * 1024];
+  ZPageOptimizedTLSF zalloc((uintptr_t)pool2, pool_size);
+  start_time = std::chrono::high_resolution_clock::now();
+  zalloc.allocate(40);
+  end_time = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
+  std::cout << "Optimized " << duration.count() << std::endl;;
+}
+
 int main() {
-  //constructor_test();
-  //basic_test();
-  //free_range_test();
-  //deferred_coalescing_test();
-  //optimized_test();
+  constructor_test();
+  basic_test();
+  free_range_test();
+  deferred_coalescing_test();
+  optimized_test();
   CUnit_initialize_test();
+  //TLSF_test4();
 }

@@ -18,14 +18,11 @@ private:
   static const size_t _BlockFreeMask = 1;
   static const size_t _BlockLastMask = 1 << 1;
 
-public:
-  // Size does not include header size and represents the usable chunk of the block.
+public: 
+  // size does not include header size, represents usable chunk of the block.
   size_t size;
-
-  // next and prev are only used in free (unused) blocks for the optimized config.
   TLSFBlockHeader *next;
   TLSFBlockHeader *prev;
-
   TLSFBlockHeader *prev_phys_block;
 
   size_t get_size();
@@ -43,9 +40,7 @@ public:
 template <typename Config>
 class TLSFBase {
 public:
-  // Constructors
   TLSFBase(uintptr_t initial_pool, size_t pool_size);
-  static TLSFBase *create(uintptr_t initial_pool, size_t pool_size);
 
   // Calling this function will erase all metadata about allocated objects inside
   // the allocator, allowing their location in memory to be overriden by new
@@ -57,12 +52,9 @@ public:
 
   size_t get_allocated_size(void *address);
 
-  // Metrics
   double header_overhead();
-  double internal_fragmentation();
-  double allocated_ratio();
 
-  // TODO: Should be removed.
+  // TODO: Should be removed. Used for debugging.
   void print_phys_blocks();
   void print_free_lists();
   void print_flatmap();
@@ -86,16 +78,11 @@ protected:
   uintptr_t _block_start;
   size_t _pool_size;
 
-
   uint64_t _fl_bitmap;
   uint32_t _sl_bitmap[Config::UseSecondLevels ? _fl_index : 0];
   TLSFBlockHeader* _blocks[_num_lists];
 
   void initialize(uintptr_t initial_pool, size_t pool_size);
-
-  // Used for converting to/from an offset for efficient storage in blocks.
-  inline uint32_t block_offset(TLSFBlockHeader *blk);
-  inline TLSFBlockHeader *block_address(uint32_t offset);
 
   void insert_block(TLSFBlockHeader *blk);
 
@@ -116,7 +103,8 @@ protected:
 
   TLSFBlockHeader *get_block_containing_address(uintptr_t address);
 
-  // These are be calculated differently for generic and specific implementations. 
+  // The following methods are calculated differently depending on the
+  // configuration.
   size_t align_size(size_t size);
   TLSFMapping get_mapping(size_t size);
   uint32_t flatten_mapping(TLSFMapping mapping);
