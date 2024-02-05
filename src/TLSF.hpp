@@ -68,7 +68,7 @@ protected:
   static const size_t _fl_index = Config::FirstLevelIndex;
   static const size_t _sl_index_log2 = Config::SecondLevelIndexLog2;
   static const size_t _sl_index = (1 << _sl_index_log2);
-  static const size_t _num_lists = _fl_index * _sl_index;
+  static const size_t _num_lists = _fl_index * _sl_index + 1;
   static const size_t _mbs = Config::MBS;
 
   bool _deferred_coalescing;

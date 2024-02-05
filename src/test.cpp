@@ -100,7 +100,8 @@ void optimized_test() {
   uint8_t *pool = mmap_allocate(pool_size);
   ZPageOptimizedTLSF t((uintptr_t)pool, pool_size);
 
-  t.allocate(1);
+  void *a = t.allocate(256 * 1024 + 1);
+  t.free(a);
 }
 
 void TLSF_test4() {
@@ -129,6 +130,6 @@ int main() {
   //free_range_test();
   //deferred_coalescing_test();
   //CUnit_initialize_test();
-  //optimized_test();
-  TLSF_test4();
+  optimized_test();
+  //TLSF_test4();
 }

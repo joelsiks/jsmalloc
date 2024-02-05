@@ -443,7 +443,7 @@ TLSFMapping TLSFBase<TLSFZOptimizedConfig>::get_mapping(size_t size) {
   int fl = TLSFUtil::ilog2(size);
   int sl = size >> (fl - _sl_index_log2) ^ (1UL << _sl_index_log2);
   size_t mapping = ((fl - _min_alloc_size_log2) << _sl_index_log2) + sl;
-  return {mapping > _num_lists ? _num_lists - 1 : mapping, 0};
+  return {mapping > _num_lists ? _num_lists : mapping, 0};
 }
 
 template <>
@@ -453,13 +453,17 @@ uint32_t TLSFBase<TLSFZOptimizedConfig>::flatten_mapping(TLSFMapping mapping) {
 
 template <>
 TLSFMapping TLSFBase<TLSFZOptimizedConfig>::find_suitable_mapping(size_t aligned_size) {
+  if(aligned_size > (1UL << (_fl_index + 4))) {
+    return {0, TLSFMapping::UNABLE_TO_FIND};
+  }
+
   size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
 
   // With the mapping we search for a free block
   TLSFMapping mapping = get_mapping(target_size);
 
   // If the first-level index is out of bounds, the request cannot be fulfilled
-  if(mapping.fl >= _num_lists) {
+  if(mapping.fl > _num_lists) {
     return {0, TLSFMapping::UNABLE_TO_FIND};
   }
 
