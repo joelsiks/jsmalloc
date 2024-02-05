@@ -130,6 +130,6 @@ int main() {
   //free_range_test();
   //deferred_coalescing_test();
   //CUnit_initialize_test();
-  optimized_test();
-  //TLSF_test4();
+  //optimized_test();
+  TLSF_test4();
 }

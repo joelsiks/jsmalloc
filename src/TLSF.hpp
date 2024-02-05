@@ -8,11 +8,6 @@
 #include <cstdint>
 #include <limits>
 
-#define BLOCK_HEADER_LENGTH_SMALL offsetof(TLSFBlockHeader, next)
-#define BLOCK_HEADER_LENGTH sizeof(TLSFBlockHeader)
-
-struct TLSFMapping;
-
 class TLSFBlockHeader {
 private:
   static const size_t _BlockFreeMask = 1;
@@ -36,6 +31,11 @@ public:
   void mark_last();
   void unmark_last();
 };
+
+struct TLSFMapping;
+
+constexpr size_t BLOCK_HEADER_LENGTH_SMALL = offsetof(TLSFBlockHeader, next);
+constexpr size_t BLOCK_HEADER_LENGTH = sizeof(TLSFBlockHeader);
 
 template <typename Config>
 class TLSFBase {
@@ -102,8 +102,7 @@ protected:
 
   TLSFBlockHeader *get_block_containing_address(uintptr_t address);
 
-  // The following methods are calculated differently depending on the
-  // configuration.
+  // The following methods are calculated differently depending on the configuration.
   size_t align_size(size_t size);
   TLSFMapping get_mapping(size_t size);
   uint32_t flatten_mapping(TLSFMapping mapping);

@@ -53,7 +53,7 @@ static void print_blk(TLSFBlockHeader *blk) {
             << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << "\n";
 
   if(blk->is_free()) {
-    std::cout << " next=" << blk->next << ", "
+    std::cout << " next=" << blk->next << ","
               << " prev=" << blk->prev 
               << std::endl;
   }
@@ -90,7 +90,6 @@ void TLSFBase<Config>::clear(bool initial_block_allocated) {
 
   blk->mark_last();
 }
-
 
 template<typename Config>
 void *TLSFBase<Config>::allocate(size_t size) {
@@ -167,7 +166,6 @@ void TLSFBase<Config>::print_phys_blocks() {
 
 template<typename Config>
 void TLSFBase<Config>::print_free_lists() {
-
   for(size_t i = 0; i < 64; i++) {
       if((_fl_bitmap & (1UL << i)) == 0) {
         continue;
@@ -199,7 +197,6 @@ void TLSFBase<Config>::print_free_lists() {
       std::cout << "END" << std::endl;
     }
   }
-
 }
 
 template<typename Config>
@@ -265,23 +262,18 @@ TLSFBlockHeader *TLSFBase<Config>::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBl
   remove_block(blk1, get_mapping(blk1->get_size()));
   remove_block(blk2, get_mapping(blk2->get_size()));
 
-  bool is_last = blk2->is_last();
+  bool blk2_is_last = blk2->is_last();
 
-  // Combine the blocks by adding the size of blk2 to block1 and also the block
+  // Combine the blocks by adding the size of blk2 to blk1 and also the block
   // header size
   blk1->size += _block_header_length + blk2->get_size();
 
-  if(is_last) {
+  if(blk2_is_last) {
     blk1->mark_last();
-  }
-
-  // We only want to re-point the prev_phys_block ptr if we are not deferring coalescing.
-  if(!Config::DeferredCoalescing) {
-    // Make sure the next physical block points to the now coalesced block instead of blk2
-    TLSFBlockHeader *next_phys = get_next_phys_block(blk1);
-    if(next_phys != nullptr) {
-      next_phys->prev_phys_block = blk1;
-    }
+  } else if(!Config::DeferredCoalescing) {
+    // We only want to re-point the prev_phys_block ptr if we are not deferring
+    // coalescing
+    get_next_phys_block(blk1)->prev_phys_block = blk1;
   }
 
   return blk1;
