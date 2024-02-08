@@ -506,7 +506,9 @@ void ZPageOptimizedTLSF::free_range(void *address, size_t range) {
   if(range_start > blk_start && range_end < blk_end) {
     size_t left_size = range_start - blk_start - _block_header_length;
     TLSFBlockHeader *free_blk = split_block(blk, left_size);
-    split_block(free_blk, range - _block_header_length);
+    // We remove 2 * _block_header_length to fit both the free and allocated blocks'
+    // header inside the middle block.
+    split_block(free_blk, range - 2 * _block_header_length);
     insert_block(free_blk);
 
   // Case 2: If the range is the entire block, we just free the block.
@@ -520,8 +522,11 @@ void ZPageOptimizedTLSF::free_range(void *address, size_t range) {
 
   // Case 4: The range is touching the block start.
   } else if(range_start == blk_start) {
-    size_t split_size = range_end - blk_start - _block_header_length;
-    insert_block(split_block(blk, split_size));
+    // We remove 2 * _block_header_length to fit both the free and allocated blocks'
+    // header inside the left block.
+    size_t split_size = range_end - blk_start - 2 * _block_header_length;
+    split_block(blk, split_size);
+    insert_block(blk);
   }
 }
 

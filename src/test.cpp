@@ -51,13 +51,16 @@ void constructor_test() {
 }
 
 void free_range_test() {
-  const size_t pool_size = 32 * 16;
+  const size_t pool_size = 128;
   uint8_t *pool = mmap_allocate(pool_size);
   ZPageOptimizedTLSF t((uintptr_t)pool, pool_size);
   t.clear(true);
   t.print_phys_blocks();
-  t.free_range((void *)((uintptr_t)pool + 64), 64);
+
+  t.free_range((void *)((uintptr_t)pool + 32), 32);
+  //t.free_range((void *)((uintptr_t)pool + 48), 16);
   std::cout << "---------------\n";
+
   t.print_phys_blocks();
 }
 
@@ -127,9 +130,9 @@ void TLSF_test4() {
 int main() {
   //constructor_test();
   //basic_test();
-  //free_range_test();
+  free_range_test();
   //deferred_coalescing_test();
   //CUnit_initialize_test();
   //optimized_test();
-  TLSF_test4();
+  //TLSF_test4();
 }
