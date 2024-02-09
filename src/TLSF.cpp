@@ -74,9 +74,9 @@ void TLSFBase<Config>::clear(bool initial_block_allocated) {
       _blocks[i * _sl_index + j] = nullptr;
     }
   }
+  _blocks[_num_lists] = nullptr;
 
   TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
-
   blk->size = _pool_size - _block_header_length;
   blk->prev_phys_block = nullptr;
 
