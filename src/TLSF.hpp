@@ -81,6 +81,8 @@ protected:
   // We add an extra list for the optimized "large-list".
   TLSFBlockHeader* _blocks[_num_lists + 1];
 
+  TLSFBlockHeader _first_header;
+
   void initialize(uintptr_t initial_pool, size_t pool_size);
 
   void insert_block(TLSFBlockHeader *blk);
@@ -102,8 +104,12 @@ protected:
 
   TLSFBlockHeader *get_block_containing_address(uintptr_t address);
 
-  // The following methods are calculated differently depending on the configuration.
   size_t align_size(size_t size);
+
+  inline TLSFBlockHeader *get_header(void *address);
+  inline void *get_address(TLSFBlockHeader *header);
+
+  // The following methods are calculated differently depending on the configuration.
   TLSFMapping get_mapping(size_t size);
   uint32_t flatten_mapping(TLSFMapping mapping);
   TLSFMapping find_suitable_mapping(size_t target_size);
