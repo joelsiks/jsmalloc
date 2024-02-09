@@ -61,25 +61,25 @@ public:
 protected:
   TLSFBase() {}
 
-  static const size_t _min_alloc_size = 16;
   static const size_t _min_alloc_size_log2 = 4;
+  static const size_t _min_alloc_size = 2 << _min_alloc_size_log2;
   static const size_t _alignment = 8;
 
   static const size_t _fl_index = Config::FirstLevelIndex;
   static const size_t _sl_index_log2 = Config::SecondLevelIndexLog2;
   static const size_t _sl_index = (1 << _sl_index_log2);
-  static const size_t _num_lists = _fl_index * _sl_index + 1;
+  static const size_t _num_lists = _fl_index * _sl_index;
   static const size_t _mbs = Config::MBS;
 
-  bool _deferred_coalescing;
   size_t _block_header_length;
-
   uintptr_t _block_start;
   size_t _pool_size;
 
   uint64_t _fl_bitmap;
   uint32_t _sl_bitmap[Config::UseSecondLevels ? _fl_index : 0];
-  TLSFBlockHeader* _blocks[_num_lists];
+
+  // We add an extra list for the optimized "large-list".
+  TLSFBlockHeader* _blocks[_num_lists + 1];
 
   void initialize(uintptr_t initial_pool, size_t pool_size);
 
