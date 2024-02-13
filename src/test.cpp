@@ -6,6 +6,8 @@
 #include <chrono>
 #include <sys/mman.h>
 
+#include <map>
+
 #include "TLSF.hpp"
 
 uint8_t *mmap_allocate(size_t pool_size) {
@@ -46,25 +48,33 @@ void constructor_test() {
   t.free(a);
   t.free(b);
 
-  t.print_phys_blocks();
+  t.print_phys_blks();
   t.print_free_lists();
+}
+
+std::map<void *, size_t> size_map;
+size_t size_mapping(void *address) {
+  return size_map[address];
 }
 
 void free_range_test() {
   const size_t pool_size = 128;
   uint8_t *pool = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size);
-  t.clear(true);
-  t.print_phys_blocks();
+
+  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping);
+  t.clear(false);
+  t.print_phys_blks();
 
   t.free_range((void *)((uintptr_t)pool + 32), 32);
+  t.print_phys_blks();
   //t.free_range((void *)((uintptr_t)pool + 48), 16);
-  std::cout << "---------------\n";
+  //std::cout << "---------------\n";
 
-  t.print_phys_blocks();
+  //t.print_phys_blks();
 }
 
 void deferred_coalescing_test() {
+  /*
   const size_t pool_size = 16 * 16 + 8;
   uint8_t *pool = mmap_allocate(pool_size);
   ZPageOptimizedTLSF t((uintptr_t)pool, pool_size);
@@ -75,15 +85,16 @@ void deferred_coalescing_test() {
   void *obj3 = t.allocate(1);
   void *obj4 = t.allocate(1);
 
-  t.free(obj1);
-  t.free(obj2);
-  t.free(obj3);
-  t.free(obj4);
+  t.free(obj1, 16);
+  t.free(obj2, 16);
+  t.free(obj3, 16);
+  t.free(obj4, 16);
   std::cout << "Deferred coalescing:\n";
-  t.print_phys_blocks();
+  t.print_phys_blks();
   t.coalesce_blocks();
   std::cout << "------------------\n";
-  t.print_phys_blocks();
+  t.print_phys_blks();
+  */
 }
 
 void CUnit_initialize_test() {
@@ -99,30 +110,38 @@ void CUnit_initialize_test() {
 }
 
 void optimized_test() {
-  size_t pool_size = 2000 * 1024;
+  size_t pool_size = 1024;
   uint8_t *pool = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size);
+  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping);
 
-  void *a = t.allocate(256 * 1024 + 1);
-  t.free(a);
+  int *arr = (int *)t.allocate(128);
+  size_map[arr] = 128;
+  for(int i = 0; i < 4; i++) {
+    arr[i] = 13;
+  }
 }
 
-void TLSF_test4() {
+void benchmark_comparison() {
   size_t pool_size = 2000 * 1024;
   uint8_t *pool1 = mmap_allocate(pool_size);
   TLSF alloc((uintptr_t)pool1, pool_size);
   
   auto start_time = std::chrono::high_resolution_clock::now();
-  alloc.allocate(40);
+  void *a = alloc.allocate(32);
+  alloc.free(a);
   auto end_time = std::chrono::high_resolution_clock::now();
+
   auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
   std::cout << "General " << duration.count() << std::endl;;
 
   uint8_t *pool2 = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF zalloc((uintptr_t)pool2, pool_size);
+  ZPageOptimizedTLSF zalloc((uintptr_t)pool2, pool_size, size_mapping);
+
   start_time = std::chrono::high_resolution_clock::now();
-  zalloc.allocate(40);
+  a = zalloc.allocate(32);
+  zalloc.free(a, 32);
   end_time = std::chrono::high_resolution_clock::now();
+
   duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
   std::cout << "Optimized " << duration.count() << std::endl;;
 }
@@ -134,5 +153,5 @@ int main() {
   //deferred_coalescing_test();
   //CUnit_initialize_test();
   //optimized_test();
-  //TLSF_test4();
+  //benchmark_comparison();
 }

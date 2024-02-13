@@ -16,8 +16,8 @@ private:
 public: 
   // size does not include header size, represents usable chunk of the block.
   size_t size;
-  TLSFBlockHeader *next;
-  TLSFBlockHeader *prev;
+  uint64_t f1;
+  uint64_t f2;
   TLSFBlockHeader *prev_phys_block;
 
   size_t get_size();
@@ -34,13 +34,19 @@ public:
 
 struct TLSFMapping;
 
-constexpr size_t BLOCK_HEADER_LENGTH_SMALL = offsetof(TLSFBlockHeader, next);
+constexpr size_t BLOCK_HEADER_LENGTH_SMALL = 0;
 constexpr size_t BLOCK_HEADER_LENGTH = sizeof(TLSFBlockHeader);
+
+typedef size_t(* allocation_size_func)(void *address);
+
+static size_t default_allocation_size(void *address) {
+  return reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - BLOCK_HEADER_LENGTH)->size;
+}
 
 template <typename Config>
 class TLSFBase {
 public:
-  TLSFBase(uintptr_t initial_pool, size_t pool_size);
+  TLSFBase(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func);
 
   // Calling this function will erase all metadata about allocated objects inside
   // the allocator, allowing their location in memory to be overriden by new
@@ -48,14 +54,13 @@ public:
   void clear(bool initial_block_allocated = false);
 
   void *allocate(size_t size);
-  void free(void *address);
-
   size_t get_allocated_size(void *address);
 
   double header_overhead();
 
   // TODO: Should be removed. Used for debugging.
-  void print_phys_blocks();
+  void print_phys_blks();
+  void print_blk(TLSFBlockHeader *blk);
   void print_free_lists();
 
 protected:
@@ -70,8 +75,10 @@ protected:
   static const size_t _sl_index = (1 << _sl_index_log2);
   static const size_t _num_lists = _fl_index * _sl_index;
   static const size_t _mbs = Config::MBS;
+  static const size_t _block_header_length = Config::BlockHeaderLength;
 
-  size_t _block_header_length;
+  allocation_size_func _size_func;
+
   uintptr_t _block_start;
   size_t _pool_size;
 
@@ -102,8 +109,15 @@ protected:
 
   TLSFBlockHeader *get_block_containing_address(uintptr_t address);
 
-  // The following methods are calculated differently depending on the configuration.
   size_t align_size(size_t size);
+
+  // The following methods are calculated differently depending on the configuration.
+  inline size_t blk_get_size(TLSFBlockHeader *blk);
+  inline TLSFBlockHeader *blk_get_next(TLSFBlockHeader *blk);
+  inline TLSFBlockHeader *blk_get_prev(TLSFBlockHeader *blk);
+  inline void blk_set_next(TLSFBlockHeader *blk, TLSFBlockHeader *next);
+  inline void blk_set_prev(TLSFBlockHeader *blk, TLSFBlockHeader *prev);
+
   TLSFMapping get_mapping(size_t size);
   uint32_t flatten_mapping(TLSFMapping mapping);
   TLSFMapping find_suitable_mapping(size_t target_size);
@@ -117,6 +131,7 @@ public:
   static const size_t MBS = 32;
   static const bool UseSecondLevels = true;
   static const bool DeferredCoalescing = false;
+  static const size_t BlockHeaderLength = BLOCK_HEADER_LENGTH;
 };
 
 class TLSFZOptimizedConfig {
@@ -126,22 +141,27 @@ public:
   static const size_t MBS = 16;
   static const bool UseSecondLevels = false;
   static const bool DeferredCoalescing = true;
+  static const size_t BlockHeaderLength = BLOCK_HEADER_LENGTH_SMALL;
 };
 
 class TLSF : public TLSFBase<TLSFBaseConfig> {
 public:
   TLSF(uintptr_t initial_pool, size_t pool_size)
-    : TLSFBase(initial_pool, pool_size) {}
+    : TLSFBase(initial_pool, pool_size, default_allocation_size) {}
 
   static TLSF *create(uintptr_t initial_pool, size_t pool_size);
+
+  void free(void *address);
 };
 
 class ZPageOptimizedTLSF : public TLSFBase<TLSFZOptimizedConfig> {
 public:
-  ZPageOptimizedTLSF(uintptr_t initial_pool, size_t pool_size)
-    : TLSFBase(initial_pool, pool_size) {}
+  ZPageOptimizedTLSF(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func)
+    : TLSFBase(initial_pool, pool_size, size_func) {}
 
-  static ZPageOptimizedTLSF *create(uintptr_t initial_pool, size_t pool_size);
+  static ZPageOptimizedTLSF *create(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func);
+
+  void free(void *address, size_t size);
 
   // This assumes that the range that is described by (address -> (address + range))
   // contains one allocated block and no more.

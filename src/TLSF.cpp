@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <cassert>
+#include <limits>
 
 #include "TLSF.hpp"
 #include "TLSFUtil.inline.hpp"
@@ -46,21 +47,9 @@ void TLSFBlockHeader::unmark_last() {
   size &= ~_BlockLastMask;
 }
 
-static void print_blk(TLSFBlockHeader *blk) {
-  std::cout << "Block (@ " << blk << ")\n" 
-            << " size=" << blk->get_size() << "\n"
-            << " prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n"
-            << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << "\n";
-
-  if(blk->is_free()) {
-    std::cout << " next=" << blk->next << ","
-              << " prev=" << blk->prev 
-              << std::endl;
-  }
-}
-
 template<typename Config>
-TLSFBase<Config>::TLSFBase(uintptr_t initial_pool, size_t pool_size) {
+TLSFBase<Config>::TLSFBase(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func) {
+  _size_func = size_func;
   initialize(initial_pool, pool_size);
 }
 
@@ -107,31 +96,6 @@ void *TLSFBase<Config>::allocate(size_t size) {
 }
 
 template<typename Config>
-void TLSFBase<Config>::free(void *address) {
-  if(address == nullptr) {
-    return;
-  }
-
-  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - _block_header_length);
-
-  // Try to merge with adjacent blocks
-  if(!Config::DeferredCoalescing) {
-    TLSFBlockHeader *prev_blk = blk->prev_phys_block;
-    TLSFBlockHeader *next_blk = get_next_phys_block(blk);
-
-    if(prev_blk != nullptr && prev_blk->is_free()) {
-      blk = coalesce_blocks(prev_blk, blk);
-    }
-
-    if(next_blk != nullptr && next_blk->is_free()) {
-      blk = coalesce_blocks(blk, next_blk);
-    }
-  }
-
-  insert_block(blk);
-}
-
-template<typename Config>
 size_t TLSFBase<Config>::get_allocated_size(void *address) {
   TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - _block_header_length);
   return blk->get_size();
@@ -155,7 +119,24 @@ double TLSFBase<Config>::header_overhead() {
 }
 
 template<typename Config>
-void TLSFBase<Config>::print_phys_blocks() {
+void TLSFBase<Config>::print_blk(TLSFBlockHeader *blk) {
+  std::cout << "Block (@ " << blk << ")\n" 
+            << " size=" << blk_get_size(blk) << "\n"
+            << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << " (not accurate)\n";
+
+  if(!Config::DeferredCoalescing) {
+    std::cout << " prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n";
+  }
+
+  if(blk->is_free()) {
+    std::cout << " next=" << blk_get_next(blk) << ","
+              << " prev=" << blk_get_prev(blk)
+              << std::endl;
+  }
+}
+
+template<typename Config>
+void TLSFBase<Config>::print_phys_blks() {
   TLSFBlockHeader *current = reinterpret_cast<TLSFBlockHeader *>(_block_start);
 
   while(current != nullptr) {
@@ -167,9 +148,9 @@ void TLSFBase<Config>::print_phys_blocks() {
 template<typename Config>
 void TLSFBase<Config>::print_free_lists() {
   for(size_t i = 0; i < 64; i++) {
-      if((_fl_bitmap & (1UL << i)) == 0) {
-        continue;
-      }
+    if((_fl_bitmap & (1UL << i)) == 0) {
+      continue;
+    }
 
     if(Config::UseSecondLevels) {
       for(size_t j = 0; j < 32; j++) {
@@ -181,7 +162,7 @@ void TLSFBase<Config>::print_free_lists() {
         TLSFBlockHeader *current = _blocks[flatten_mapping({i, j})];
         while(current != nullptr) {
           std::cout << current << " -> ";
-          current = current->next;
+          current = blk_get_next(current);
         }
         std::cout << "END" << std::endl;
       }
@@ -191,7 +172,7 @@ void TLSFBase<Config>::print_free_lists() {
       TLSFBlockHeader *current = _blocks[i];
       while(current != nullptr) {
         std::cout << current << " -> ";
-        current = current->next;
+        current = blk_get_next(current);
       }
 
       std::cout << "END" << std::endl;
@@ -201,8 +182,6 @@ void TLSFBase<Config>::print_free_lists() {
 
 template<typename Config>
 void TLSFBase<Config>::initialize(uintptr_t initial_pool, size_t pool_size) {
-  _block_header_length = Config::DeferredCoalescing ? BLOCK_HEADER_LENGTH_SMALL : BLOCK_HEADER_LENGTH;
-
   uintptr_t aligned_initial_block = TLSFUtil::align_up(initial_pool, _alignment);
   _block_start = aligned_initial_block;
 
@@ -216,17 +195,18 @@ void TLSFBase<Config>::initialize(uintptr_t initial_pool, size_t pool_size) {
 
 template<typename Config>
 void TLSFBase<Config>::insert_block(TLSFBlockHeader *blk) {
-  TLSFMapping mapping = get_mapping(blk->get_size());
+  TLSFMapping mapping = get_mapping(blk_get_size(blk));
   uint32_t flat_mapping = flatten_mapping(mapping);
 
   TLSFBlockHeader *head = _blocks[flat_mapping];
 
   // Insert the block into its corresponding free-list
   if(head != nullptr) {
-    head->prev = blk;
+    blk_set_prev(head, blk);
   }
-  blk->next = head;
-  blk->prev = nullptr;
+
+  blk_set_next(blk, head);
+  blk_set_prev(blk, nullptr);
   _blocks[flat_mapping] = blk;
 
   // Mark the block as free
@@ -290,12 +270,12 @@ TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMappin
 
   assert(target != nullptr);
 
-  if(target->next != nullptr) {
-    target->next->prev = target->prev;
+  if(blk_get_next(target) != nullptr) {
+    blk_set_prev(blk_get_next(target), blk_get_prev(target));
   }
 
-  if(target->prev != nullptr) {
-    target->prev->next = target->next;
+  if(blk_get_prev(target) != nullptr) {
+    blk_set_next(blk_get_prev(target), blk_get_next(target));
   }
 
   // Mark the block as used (no longer free)
@@ -303,11 +283,11 @@ TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMappin
 
   // If the block is the last one in the free-list we need to update
   if(_blocks[flat_mapping] == target) {
-    _blocks[flat_mapping] = target->next;
+    _blocks[flat_mapping] = blk_get_next(target);
   }
 
   // If the block is the last one in the free-list, we mark it as empty
-  if(target->next == nullptr) {
+  if(blk_get_next(target) == nullptr) {
     update_bitmap(mapping, false);
   }
 
@@ -316,13 +296,13 @@ TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMappin
 
 template<typename Config>
 TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size) {
-  size_t remainder_size = blk->get_size() - _block_header_length - size;
+  size_t remainder_size = blk_get_size(blk) - _block_header_length - size;
   bool is_last = blk->is_last();
 
   blk->size = size;
 
   // Use a portion of blk's memory for the new block
-  TLSFBlockHeader *remainder_blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)blk + _block_header_length + blk->get_size());
+  TLSFBlockHeader *remainder_blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)blk + _block_header_length + blk_get_size(blk));
   remainder_blk->size = remainder_size;
   remainder_blk->prev_phys_block = blk;
 
@@ -341,7 +321,7 @@ template<typename Config>
 TLSFBlockHeader *TLSFBase<Config>::get_next_phys_block(TLSFBlockHeader *blk) {
   return blk->is_last() 
     ? nullptr 
-    : (TLSFBlockHeader *)((uintptr_t)blk + _block_header_length + blk->get_size());
+    : (TLSFBlockHeader *)((uintptr_t)blk + _block_header_length + blk_get_size(blk));
 }
 
 template<typename Config>
@@ -363,9 +343,34 @@ TLSFBlockHeader *TLSFBase<Config>::get_block_containing_address(uintptr_t addres
   return nullptr;
 }
 
-template <>
-size_t TLSFBase<TLSFBaseConfig>::align_size(size_t size) {
+template<typename Config>
+size_t TLSFBase<Config>::align_size(size_t size) {
   return TLSFUtil::align_up(TLSFUtil::align_up(size, _alignment), _mbs);
+}
+
+template<>
+size_t TLSFBase<TLSFBaseConfig>::blk_get_size(TLSFBlockHeader *blk) {
+  return blk->get_size();
+}
+
+template<>
+TLSFBlockHeader *TLSFBase<TLSFBaseConfig>::blk_get_next(TLSFBlockHeader *blk) {
+  return reinterpret_cast<TLSFBlockHeader *>(blk->f1);
+}
+
+template<>
+TLSFBlockHeader *TLSFBase<TLSFBaseConfig>::blk_get_prev(TLSFBlockHeader *blk) {
+  return reinterpret_cast<TLSFBlockHeader *>(blk->f2);
+}
+
+template<>
+void TLSFBase<TLSFBaseConfig>::blk_set_next(TLSFBlockHeader *blk, TLSFBlockHeader *next) {
+  blk->f1 = reinterpret_cast<uint64_t>(next);
+}
+
+template<>
+void TLSFBase<TLSFBaseConfig>::blk_set_prev(TLSFBlockHeader *blk, TLSFBlockHeader *prev) {
+  blk->f2 = reinterpret_cast<uint64_t>(prev);
 }
 
 template <>
@@ -425,9 +430,59 @@ void TLSFBase<TLSFBaseConfig>::update_bitmap(TLSFMapping mapping, bool free_upda
   }
 }
 
-template <>
-size_t TLSFBase<TLSFZOptimizedConfig>::align_size(size_t size) {
-  return TLSFUtil::align_up(TLSFUtil::align_up(size, _alignment), _mbs);
+template<>
+size_t TLSFBase<TLSFZOptimizedConfig>::blk_get_size(TLSFBlockHeader *blk) {
+  size_t size = _size_func(reinterpret_cast<void *>(blk));
+
+  if(size == 0) {
+    return blk->get_size();
+  } else {
+    return size;
+  }
+}
+
+template<>
+TLSFBlockHeader *TLSFBase<TLSFZOptimizedConfig>::blk_get_next(TLSFBlockHeader *blk) {
+  uintptr_t offset = static_cast<uint32_t>(blk->f1 >> 32);
+
+  if(offset == std::numeric_limits<uint32_t>::max()) {
+    return nullptr;
+  } else {
+    return reinterpret_cast<TLSFBlockHeader *>(_block_start + offset);
+  }
+}
+
+template<>
+TLSFBlockHeader *TLSFBase<TLSFZOptimizedConfig>::blk_get_prev(TLSFBlockHeader *blk) {
+  uintptr_t offset = static_cast<uint32_t>(blk->f1 & 0xFFFFFFFF);
+
+  if(offset == std::numeric_limits<uint32_t>::max()) {
+    return nullptr;
+  } else {
+    return reinterpret_cast<TLSFBlockHeader *>(_block_start + offset);
+  }
+}
+
+template<>
+void TLSFBase<TLSFZOptimizedConfig>::blk_set_next(TLSFBlockHeader *blk, TLSFBlockHeader *next) {
+  uintptr_t offset = std::numeric_limits<uint32_t>::max();
+
+  if(next != nullptr) {
+    offset = reinterpret_cast<uintptr_t>(next) - reinterpret_cast<uintptr_t>(blk);
+  }
+    
+  blk->f1 = (static_cast<uint64_t>(offset) << 32) | (blk->f1 & 0xFFFFFFFF);
+}
+
+template<>
+void TLSFBase<TLSFZOptimizedConfig>::blk_set_prev(TLSFBlockHeader *blk, TLSFBlockHeader *prev) {
+  uintptr_t offset = std::numeric_limits<uint32_t>::max();
+
+  if(prev != nullptr) {
+    offset = reinterpret_cast<uintptr_t>(prev) - reinterpret_cast<uintptr_t>(blk);
+  }
+
+  blk->f1 = (blk->f1 & 0xFFFFFFFF00000000) | (static_cast<uint32_t>(offset) & 0xFFFFFFFF);
 }
 
 template <>
@@ -483,9 +538,41 @@ TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
   return new(tlsf) TLSF(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF));
 }
 
-ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t pool_size) {
+void TLSF::free(void *address) {
+  if(address == nullptr) {
+    return;
+  }
+
+  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - _block_header_length);
+
+  TLSFBlockHeader *prev_blk = blk->prev_phys_block;
+  TLSFBlockHeader *next_blk = get_next_phys_block(blk);
+
+  if(prev_blk != nullptr && prev_blk->is_free()) {
+    blk = coalesce_blocks(prev_blk, blk);
+  }
+
+  if(next_blk != nullptr && next_blk->is_free()) {
+    blk = coalesce_blocks(blk, next_blk);
+  }
+
+  insert_block(blk);
+}
+
+ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func) {
   ZPageOptimizedTLSF *tlsf = reinterpret_cast<ZPageOptimizedTLSF *>(initial_pool);
-  return new(tlsf) ZPageOptimizedTLSF(initial_pool + sizeof(ZPageOptimizedTLSF), pool_size - sizeof(ZPageOptimizedTLSF));
+  return new(tlsf) ZPageOptimizedTLSF(initial_pool + sizeof(ZPageOptimizedTLSF), pool_size - sizeof(ZPageOptimizedTLSF), size_func);
+}
+
+void ZPageOptimizedTLSF::free(void *address, size_t size) {
+  if(address == nullptr) {
+    return;
+  }
+
+  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(address);
+  blk->size = size;
+
+  insert_block(blk);
 }
 
 void ZPageOptimizedTLSF::free_range(void *address, size_t range) {
@@ -494,7 +581,7 @@ void ZPageOptimizedTLSF::free_range(void *address, size_t range) {
 
   TLSFBlockHeader *blk = get_block_containing_address(range_start);
   uintptr_t blk_start = (uintptr_t)blk;
-  uintptr_t blk_end = blk_start + _block_header_length + blk->get_size();
+  uintptr_t blk_end = blk_start + blk->get_size();
 
   // If the range start and end are not in the same block, the user is calling
   // this function wrong and we return.
@@ -504,27 +591,23 @@ void ZPageOptimizedTLSF::free_range(void *address, size_t range) {
 
   // Case 1: The range is inside the block but not touching any borders.
   if(range_start > blk_start && range_end < blk_end) {
-    size_t left_size = range_start - blk_start - _block_header_length;
+    size_t left_size = range_start - blk_start;
     TLSFBlockHeader *free_blk = split_block(blk, left_size);
-    // We remove 2 * _block_header_length to fit both the free and allocated blocks'
-    // header inside the middle block.
-    split_block(free_blk, range - 2 * _block_header_length);
+    split_block(free_blk, range);
     insert_block(free_blk);
 
   // Case 2: If the range is the entire block, we just free the block.
   } else if(range_start == blk_start && range_end == blk_end) {
-    free(reinterpret_cast<TLSFBlockHeader *>(blk_start + _block_header_length));
+    free(reinterpret_cast<TLSFBlockHeader *>(blk_start), _pool_size);
 
   // Case 3: The range is touching the block end.
   } else if(range_end == blk_end) {
-    size_t split_size = range_start - blk_start - _block_header_length;
+    size_t split_size = range_start - blk_start;
     insert_block(split_block(blk, split_size));
 
   // Case 4: The range is touching the block start.
   } else if(range_start == blk_start) {
-    // We remove 2 * _block_header_length to fit both the free and allocated blocks'
-    // header inside the left block.
-    size_t split_size = range_end - blk_start - 2 * _block_header_length;
+    size_t split_size = range_end - blk_start;
     split_block(blk, split_size);
     insert_block(blk);
   }
