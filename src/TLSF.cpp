@@ -67,7 +67,9 @@ void TLSFBase<Config>::clear(bool initial_block_allocated) {
 
   TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
   blk->size = _pool_size - _block_header_length;
-  blk->prev_phys_block = nullptr;
+  if(!Config::DeferredCoalescing) {
+    blk->prev_phys_block = nullptr;
+  }
 
   // If the initial block is not allocated it should be inserted into its
   // corresponding free list.
@@ -299,12 +301,15 @@ TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size
   size_t remainder_size = blk_get_size(blk) - _block_header_length - size;
   bool is_last = blk->is_last();
 
+  // Shrink blk to size
   blk->size = size;
 
   // Use a portion of blk's memory for the new block
   TLSFBlockHeader *remainder_blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)blk + _block_header_length + blk_get_size(blk));
   remainder_blk->size = remainder_size;
-  remainder_blk->prev_phys_block = blk;
+  if(!Config::DeferredCoalescing) {
+    remainder_blk->prev_phys_block = blk;
+  }
 
   if(is_last) {
     blk->unmark_last();
