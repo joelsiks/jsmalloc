@@ -30,7 +30,7 @@ void basic_test() {
   assert(ptr3 != nullptr);
 
   void *ptr4 = t->allocate(1);
-  assert(ptr3 != nullptr);
+  assert(ptr4 != nullptr);
 
   t->free(ptr1);
   t->free(ptr3);
@@ -123,11 +123,11 @@ void CUnit_initialize_test() {
   uint8_t *pool = mmap_allocate(pool_size);
   TLSF *tl = TLSF::create((uintptr_t)pool, 10000 * 1024);
 
-  void *a = tl->allocate(3000000000000);
-  a = tl->allocate(72704);
-  void *b = tl->allocate(128);
-  a = tl->allocate(1024);
-  a = tl->allocate(9488880);
+  tl->allocate(3000000000000);
+  tl->allocate(72704);
+  tl->allocate(128);
+  tl->allocate(1024);
+  tl->allocate(9488880);
 }
 
 void optimized_test() {
@@ -190,9 +190,9 @@ int main() {
   //basic_test();
   //constructor_test();
   //free_range_test();
-  deferred_coalescing_test();
+  //deferred_coalescing_test();
   //CUnit_initialize_test();
   //optimized_test();
   //benchmark_comparison_untimed();
-  //benchmark_comparison();
+  benchmark_comparison();
 }

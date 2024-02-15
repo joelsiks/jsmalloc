@@ -98,29 +98,6 @@ void *TLSFBase<Config>::allocate(size_t size) {
 }
 
 template<typename Config>
-size_t TLSFBase<Config>::get_allocated_size(void *address) {
-  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - _block_header_length);
-  return blk->get_size();
-}
-
-template<typename Config>
-double TLSFBase<Config>::header_overhead() {
-  // Iterate over all blocks.
-  TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
-
-  size_t headers = 0;
-  size_t blocks = 0;
-
-  while(current_blk != nullptr) {
-    headers += _block_header_length;
-    blocks += current_blk->get_size();
-    current_blk = get_next_phys_block(current_blk);
-  }
-
-  return (double)headers / blocks;
-}
-
-template<typename Config>
 void TLSFBase<Config>::print_blk(TLSFBlockHeader *blk) {
   std::cout << "Block (@ " << blk << ")\n" 
             << " size=" << blk_get_size(blk) << "\n"
@@ -382,7 +359,6 @@ void TLSFBase<TLSFBaseConfig>::blk_set_prev(TLSFBlockHeader *blk, TLSFBlockHeade
 template <>
 TLSFMapping TLSFBase<TLSFBaseConfig>::get_mapping(size_t size) {
   uint32_t fl = TLSFUtil::ilog2(size);
-  uint32_t fl2 = (1 << fl);
   uint32_t sl = (size >> (fl - _sl_index_log2)) ^ (1 << _sl_index_log2);
   return {fl, sl};
 }
@@ -563,6 +539,11 @@ void TLSF::free(void *address) {
   }
 
   insert_block(blk);
+}
+
+size_t TLSF::get_allocated_size(void *address) {
+  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - _block_header_length);
+  return blk->get_size();
 }
 
 ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func) {

@@ -54,9 +54,6 @@ public:
   void clear(bool initial_block_allocated = false);
 
   void *allocate(size_t size);
-  size_t get_allocated_size(void *address);
-
-  double header_overhead();
 
   // TODO: Should be removed. Used for debugging.
   void print_phys_blks();
@@ -152,6 +149,8 @@ public:
   static TLSF *create(uintptr_t initial_pool, size_t pool_size);
 
   void free(void *address);
+
+  size_t get_allocated_size(void *address);
 };
 
 class ZPageOptimizedTLSF : public TLSFBase<TLSFZOptimizedConfig> {
