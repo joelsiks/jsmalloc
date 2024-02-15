@@ -127,7 +127,7 @@ void TLSFBase<Config>::print_blk(TLSFBlockHeader *blk) {
             << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << " (not accurate)\n";
 
   if(!Config::DeferredCoalescing) {
-    std::cout << " prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n";
+    std::cout << " phys_prev=" << ((blk->prev_phys_block == nullptr) ? 0 : blk->prev_phys_block) << "\n";
   }
 
   if(blk->is_free()) {
@@ -241,14 +241,15 @@ TLSFBlockHeader *TLSFBase<Config>::find_block(size_t size) {
 
 template<typename Config>
 TLSFBlockHeader *TLSFBase<Config>::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBlockHeader *blk2) {
+  size_t blk2_size = blk2->get_size();
   remove_block(blk1, get_mapping(blk1->get_size()));
-  remove_block(blk2, get_mapping(blk2->get_size()));
+  remove_block(blk2, get_mapping(blk2_size));
 
   bool blk2_is_last = blk2->is_last();
 
   // Combine the blocks by adding the size of blk2 to blk1 and also the block
   // header size
-  blk1->size += _block_header_length + blk2->get_size();
+  blk1->size += _block_header_length + blk2_size;
 
   if(blk2_is_last) {
     blk1->mark_last();
@@ -350,7 +351,7 @@ TLSFBlockHeader *TLSFBase<Config>::get_block_containing_address(uintptr_t addres
 
 template<typename Config>
 size_t TLSFBase<Config>::align_size(size_t size) {
-  return TLSFUtil::align_up(TLSFUtil::align_up(size, _alignment), _mbs);
+  return TLSFUtil::align_up(size, _mbs);
 }
 
 template<>
@@ -382,7 +383,7 @@ template <>
 TLSFMapping TLSFBase<TLSFBaseConfig>::get_mapping(size_t size) {
   uint32_t fl = TLSFUtil::ilog2(size);
   uint32_t fl2 = (1 << fl);
-  uint32_t sl = (size - fl2) * _sl_index / fl2;
+  uint32_t sl = (size >> (fl - _sl_index_log2)) ^ (1 << _sl_index_log2);
   return {fl, sl};
 }
 
@@ -473,7 +474,7 @@ void TLSFBase<TLSFZOptimizedConfig>::blk_set_next(TLSFBlockHeader *blk, TLSFBloc
   uintptr_t offset = std::numeric_limits<uint32_t>::max();
 
   if(next != nullptr) {
-    offset = reinterpret_cast<uintptr_t>(next) - reinterpret_cast<uintptr_t>(blk);
+    offset = reinterpret_cast<uintptr_t>(next) - reinterpret_cast<uintptr_t>(_block_start);
   }
     
   blk->f1 = (static_cast<uint64_t>(offset) << 32) | (blk->f1 & 0xFFFFFFFF);
@@ -484,7 +485,7 @@ void TLSFBase<TLSFZOptimizedConfig>::blk_set_prev(TLSFBlockHeader *blk, TLSFBloc
   uintptr_t offset = std::numeric_limits<uint32_t>::max();
 
   if(prev != nullptr) {
-    offset = reinterpret_cast<uintptr_t>(prev) - reinterpret_cast<uintptr_t>(blk);
+    offset = reinterpret_cast<uintptr_t>(prev) - reinterpret_cast<uintptr_t>(_block_start);
   }
 
   blk->f1 = (blk->f1 & 0xFFFFFFFF00000000) | (static_cast<uint32_t>(offset) & 0xFFFFFFFF);
