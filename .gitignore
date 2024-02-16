@@ -1,4 +1,8 @@
 .vscode
 build
 test
+*.o
 *.so
+*.out
+*.lib
+*.a

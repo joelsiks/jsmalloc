@@ -606,7 +606,7 @@ void ZPageOptimizedTLSF::free_range(void *address, size_t range) {
 void ZPageOptimizedTLSF::coalesce_blocks() {
   TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
 
-  while (current_blk != nullptr) {
+  while(current_blk != nullptr) {
     TLSFBlockHeader *next_blk = get_next_phys_block(current_blk);
 
     if(next_blk != nullptr && current_blk->is_free() && next_blk->is_free()) {

@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++14
+CXXFLAGS = -Wall -Wextra -std=c++14 -O2
 
 # Directories
 SRC_DIR = src
@@ -16,13 +16,13 @@ SHARED_LIB = libtlsf.so
 all: prep $(LIB_OBJ_FILES)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
-	$(CXX) -g $(CXXFLAGS) -fPIC -c $< -o $@
+	$(CXX) $(CXXFLAGS) -fPIC -c $< -o $@
 
 test: prep $(TEST_OBJ_FILES)
-	$(CXX) -g $(CXXFLAGS) $(TEST_OBJ_FILES) -o test
+	$(CXX) $(CXXFLAGS) $(TEST_OBJ_FILES) -o test
 
 sharedlib: prep $(OBJ_FILES)
-	$(CXX) -g -shared -o $(SHARED_LIB) $(OBJ_FILES)
+	$(CXX) -shared -o $(SHARED_LIB) $(OBJ_FILES)
 
 prep:
 	mkdir -p $(BUILD_DIR)
@@ -33,5 +33,5 @@ format:
 	xargs clang-format --style=file -i 
 
 clean:
-	rm -rf $(BUILD_DIR) test $(SHARED_LIB)
+	rm -rf $(BUILD_DIR) test $(SHARED_LIB) *.out
 
