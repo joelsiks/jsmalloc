@@ -15,7 +15,7 @@ template class TLSFBase<TLSFZOptimizedConfig>;
 // Contains first- and second-level index to segregated lists
 // In the case of the optimized version, only the fl mapping is used.
 struct TLSFMapping { 
-  static const uint32_t UNABLE_TO_FIND = (uint32_t)-1;
+  static const uint32_t UNABLE_TO_FIND = std::numeric_limits<uint32_t>::max();
   size_t fl, sl;
 };
 
@@ -58,7 +58,10 @@ void TLSFBase<Config>::clear(bool initial_block_allocated) {
   // Initialize bitmap and blocks
   _fl_bitmap = 0;
   for(size_t i = 0; i < _fl_index; i++) {
-    _sl_bitmap[i] = 0;
+    if(Config::UseSecondLevels) {
+      _sl_bitmap[i] = 0;
+    }
+
     for(size_t j = 0; j < _sl_index; j++) {
       _blocks[i * _sl_index + j] = nullptr;
     }
@@ -365,7 +368,7 @@ TLSFMapping TLSFBase<TLSFBaseConfig>::get_mapping(size_t size) {
 
 template <>
 uint32_t TLSFBase<TLSFBaseConfig>::flatten_mapping(TLSFMapping mapping) {
-    return mapping.fl * _sl_index + mapping.sl;
+  return mapping.fl * _sl_index + mapping.sl;
 }
 
 template <>
