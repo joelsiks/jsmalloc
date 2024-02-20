@@ -9,7 +9,7 @@ BUILD_DIR = build
 SRC_FILES = $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_FILES = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(SRC_FILES))
 TEST_OBJ_FILES = $(filter-out $(BUILD_DIR)/TLSFMalloc.o, $(OBJ_FILES))
-LIB_OBJ_FILES = $(filter-out $(BUILD_DIR)/test.o, $(TEST_OBJ_FILES))
+LIB_OBJ_FILES = $(filter-out $(BUILD_DIR)/test.o, $(OBJ_FILES))
 SHARED_LIB = libtlsf.so
 
 # Targets
@@ -21,8 +21,8 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 test: prep $(TEST_OBJ_FILES)
 	$(CXX) $(CXXFLAGS) $(TEST_OBJ_FILES) -o test
 
-sharedlib: prep $(OBJ_FILES)
-	$(CXX) -shared -o $(SHARED_LIB) $(OBJ_FILES)
+sharedlib: prep $(LIB_OBJ_FILES)
+	$(CXX) -shared -o $(SHARED_LIB) $(LIB_OBJ_FILES)
 
 prep:
 	mkdir -p $(BUILD_DIR)

@@ -6,7 +6,7 @@
 
 #include "TLSF.hpp"
 
-#define MEMPOOL_SIZE (1024 * 1000 * 1000)
+static const size_t MEMPOOL_SIZE = 1024 * 1000 * 400;
 
 uint8_t *mempool = nullptr;
 static TLSF *tlsf_allocator = nullptr;

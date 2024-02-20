@@ -51,7 +51,7 @@ public:
   // Calling this function will erase all metadata about allocated objects inside
   // the allocator, allowing their location in memory to be overriden by new
   // calls to allocate(). Use with caution.
-  void clear(bool initial_block_allocated = false);
+  void reset(bool initial_block_allocated = false);
 
   void *allocate(size_t size);
 

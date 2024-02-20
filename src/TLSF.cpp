@@ -236,7 +236,8 @@ TLSFBlockHeader *TLSFBase<Config>::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBl
   } else if(!Config::DeferredCoalescing) {
     // We only want to re-point the prev_phys_block ptr if we are not deferring
     // coalescing
-    get_next_phys_block(blk1)->prev_phys_block = blk1;
+    TLSFBlockHeader *next = get_next_phys_block(blk1);
+    next->prev_phys_block = blk1;
   }
 
   return blk1;
@@ -264,7 +265,7 @@ TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMappin
   // Mark the block as used (no longer free)
   target->mark_used();
 
-  // If the block is the last one in the free-list we need to update
+  // If the block is the last one in the free-list we need to update the head
   if(_blocks[flat_mapping] == target) {
     _blocks[flat_mapping] = blk_get_next(target);
   }
@@ -280,6 +281,8 @@ TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMappin
 template<typename Config>
 TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size) {
   size_t remainder_size = blk_get_size(blk) - _block_header_length - size;
+
+  // Needs to be checked before setting new size
   bool is_last = blk->is_last();
 
   // Shrink blk to size
@@ -389,7 +392,7 @@ TLSFMapping TLSFBase<TLSFBaseConfig>::find_suitable_mapping(size_t aligned_size)
     // first-level instead
     uint32_t fl_map = _fl_bitmap & (~0UL << (mapping.fl + 1));
     if(fl_map == 0) {
-      // No suitable block exists.
+      // No suitable block exists
       return {0, TLSFMapping::UNABLE_TO_FIND};
     }
 
