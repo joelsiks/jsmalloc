@@ -63,7 +63,7 @@ void free_range_test() {
   uint8_t *pool = mmap_allocate(pool_size);
 
   ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping);
-  t.clear(false);
+  t.reset();
   t.print_phys_blks();
 
   t.free_range((void *)((uintptr_t)pool + 32), 32);
@@ -111,7 +111,7 @@ void deferred_coalescing_test() {
   t.print_phys_blks();
   t.print_free_lists();
 
-  t.coalesce_blocks();
+  t.aggregate();
 
   std::cout << "------------------\n";
   t.print_phys_blks();
@@ -190,9 +190,9 @@ int main() {
   //basic_test();
   //constructor_test();
   //free_range_test();
-  //deferred_coalescing_test();
+  deferred_coalescing_test();
   //CUnit_initialize_test();
   //optimized_test();
   //benchmark_comparison_untimed();
-  benchmark_comparison();
+  //benchmark_comparison();
 }

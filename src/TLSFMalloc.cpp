@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <sys/mman.h>
+#include <cerrno>
 
 #include "TLSF.hpp"
 
@@ -29,7 +30,10 @@ extern "C" {
     }
 
     void *ptr = malloc(nmemb * size);
-    memset(ptr, 0, nmemb * size);
+    if(ptr != nullptr) {
+      memset(ptr, 0, nmemb * size);
+    }
+
     return ptr;
   }
 
@@ -38,7 +42,13 @@ extern "C" {
       initialize_tlsf();
     }
 
-    return tlsf_allocator->allocate(size);
+    void *addr = tlsf_allocator->allocate(size);
+
+    if(addr == nullptr) {
+      errno = ENOMEM;
+    }
+
+    return addr;
   }
 
   void free(void *addr) {
@@ -61,10 +71,16 @@ extern "C" {
     }
 
     void *newalloc = tlsf_allocator->allocate(size);
+    if(newalloc == nullptr) {
+      return nullptr;
+    }
+
     size_t old_size = tlsf_allocator->get_allocated_size(ptr);
     size_t copy_size = old_size < size ? old_size : size;
+
     memcpy(newalloc, ptr, copy_size);
     free(ptr);
+
     return newalloc;
   }
 }

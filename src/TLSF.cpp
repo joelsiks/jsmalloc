@@ -54,7 +54,7 @@ TLSFBase<Config>::TLSFBase(uintptr_t initial_pool, size_t pool_size, allocation_
 }
 
 template<typename Config>
-void TLSFBase<Config>::clear(bool initial_block_allocated) {
+void TLSFBase<Config>::reset(bool initial_block_allocated) {
   // Initialize bitmap and blocks
   _fl_bitmap = 0;
   for(size_t i = 0; i < _fl_index; i++) {
@@ -74,8 +74,6 @@ void TLSFBase<Config>::clear(bool initial_block_allocated) {
     blk->prev_phys_block = nullptr;
   }
 
-  // If the initial block is not allocated it should be inserted into its
-  // corresponding free list.
   if(!initial_block_allocated) {
     insert_block(blk);
   } else {
@@ -172,7 +170,7 @@ void TLSFBase<Config>::initialize(uintptr_t initial_pool, size_t pool_size) {
   size_t aligned_block_size = TLSFUtil::align_down(pool_size - (aligned_initial_block - initial_pool), _mbs);
   _pool_size = aligned_block_size;
 
-  clear();
+  reset(false);
 }
 
 template<typename Config>
@@ -526,12 +524,12 @@ TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
   return new(tlsf) TLSF(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF));
 }
 
-void TLSF::free(void *address) {
-  if(address == nullptr) {
+void TLSF::free(void *ptr) {
+  if(ptr == nullptr) {
     return;
   }
 
-  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - _block_header_length);
+  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)ptr - _block_header_length);
 
   TLSFBlockHeader *prev_blk = blk->prev_phys_block;
   TLSFBlockHeader *next_blk = get_next_phys_block(blk);
@@ -557,20 +555,20 @@ ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t po
   return new(tlsf) ZPageOptimizedTLSF(initial_pool + sizeof(ZPageOptimizedTLSF), pool_size - sizeof(ZPageOptimizedTLSF), size_func);
 }
 
-void ZPageOptimizedTLSF::free(void *address, size_t size) {
-  if(address == nullptr) {
+void ZPageOptimizedTLSF::free(void *ptr, size_t size) {
+  if(ptr == nullptr) {
     return;
   }
 
-  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(address);
+  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(ptr);
   blk->size = size;
 
   insert_block(blk);
 }
 
-void ZPageOptimizedTLSF::free_range(void *address, size_t range) {
-  uintptr_t range_start = (uintptr_t)address;
-  uintptr_t range_end = range_start + range;
+void ZPageOptimizedTLSF::free_range(void *start_ptr, size_t size) {
+  uintptr_t range_start = (uintptr_t)start_ptr;
+  uintptr_t range_end = range_start + size;
 
   TLSFBlockHeader *blk = get_block_containing_address(range_start);
   uintptr_t blk_start = (uintptr_t)blk;
@@ -586,7 +584,7 @@ void ZPageOptimizedTLSF::free_range(void *address, size_t range) {
   if(range_start > blk_start && range_end < blk_end) {
     size_t left_size = range_start - blk_start;
     TLSFBlockHeader *free_blk = split_block(blk, left_size);
-    split_block(free_blk, range);
+    split_block(free_blk, size);
     insert_block(free_blk);
 
   // Case 2: If the range is the entire block, we just free the block.
@@ -606,7 +604,7 @@ void ZPageOptimizedTLSF::free_range(void *address, size_t range) {
   }
 }
 
-void ZPageOptimizedTLSF::coalesce_blocks() {
+void ZPageOptimizedTLSF::aggregate() {
   TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
 
   while(current_blk != nullptr) {

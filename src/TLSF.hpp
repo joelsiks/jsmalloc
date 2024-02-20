@@ -48,11 +48,7 @@ class TLSFBase {
 public:
   TLSFBase(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func);
 
-  // Calling this function will erase all metadata about allocated objects inside
-  // the allocator, allowing their location in memory to be overriden by new
-  // calls to allocate(). Use with caution.
-  void reset(bool initial_block_allocated = false);
-
+  void reset(bool initial_block_allocated = true);
   void *allocate(size_t size);
 
   // TODO: Should be removed. Used for debugging.
@@ -148,7 +144,7 @@ public:
 
   static TLSF *create(uintptr_t initial_pool, size_t pool_size);
 
-  void free(void *address);
+  void free(void *ptr);
 
   size_t get_allocated_size(void *address);
 };
@@ -160,14 +156,14 @@ public:
 
   static ZPageOptimizedTLSF *create(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func);
 
-  void free(void *address, size_t size);
+  void free(void *ptr, size_t size);
 
   // This assumes that the range that is described by (address -> (address + range))
   // contains one allocated block and no more.
-  void free_range(void *address, size_t range);
+  void free_range(void *start_ptr, size_t size);
 
   // Manually trigger block coalescing.
-  void coalesce_blocks();
+  void aggregate();
 };
 
 #endif // TLSF_HPP
