@@ -102,6 +102,8 @@ protected:
 
   TLSFBlockHeader *get_block_containing_address(uintptr_t address);
 
+  bool ptr_in_pool(uintptr_t ptr);
+
   size_t align_size(size_t size);
 
   // The following methods are calculated differently depending on the configuration.

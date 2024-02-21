@@ -95,7 +95,7 @@ void *TLSFBase<Config>::allocate(size_t size) {
   // TODO: This might not be necessary if everything is already aligned, and
   // should take into account that the block size might be smaller than expected.
   uintptr_t blk_start = (uintptr_t)blk + _block_header_length;
-  return (void *)TLSFUtil::align_up(blk_start, _alignment);
+  return (void *)blk_start;
 }
 
 template<typename Config>
@@ -331,7 +331,16 @@ TLSFBlockHeader *TLSFBase<Config>::get_block_containing_address(uintptr_t addres
 }
 
 template<typename Config>
+bool TLSFBase<Config>::ptr_in_pool(uintptr_t ptr) {
+  return ptr >= _block_start && ptr < (_block_start + _pool_size);
+}
+
+template<typename Config>
 size_t TLSFBase<Config>::align_size(size_t size) {
+  if(size == 0) {
+    size = 1;
+  }
+
   return TLSFUtil::align_up(size, _mbs);
 }
 
@@ -529,6 +538,10 @@ void TLSF::free(void *ptr) {
     return;
   }
 
+  if(!ptr_in_pool((uintptr_t)ptr)) {
+    return;
+  }
+
   TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)ptr - _block_header_length);
 
   TLSFBlockHeader *prev_blk = blk->prev_phys_block;
@@ -557,6 +570,10 @@ ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t po
 
 void ZPageOptimizedTLSF::free(void *ptr, size_t size) {
   if(ptr == nullptr) {
+    return;
+  }
+
+  if(!ptr_in_pool((uintptr_t)ptr)) {
     return;
   }
 
