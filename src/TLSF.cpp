@@ -76,11 +76,13 @@ void TLSFBase<Config>::reset(bool initial_block_allocated) {
 
   if(!initial_block_allocated) {
     insert_block(blk);
-  } else {
-    blk->mark_used();
+  } else if(_block_header_length > 0) {
+      blk->mark_used();
   }
 
-  blk->mark_last();
+  if(_block_header_length > 0) {
+    blk->mark_last();
+  }
 }
 
 template<typename Config>
@@ -263,7 +265,7 @@ TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMappin
   // Mark the block as used (no longer free)
   target->mark_used();
 
-  // If the block is the last one in the free-list we need to update the head
+  // If the block is the head in the free-list, we need to update the head
   if(_blocks[flat_mapping] == target) {
     _blocks[flat_mapping] = blk_get_next(target);
   }
