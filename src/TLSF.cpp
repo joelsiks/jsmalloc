@@ -591,6 +591,13 @@ void ZPageOptimizedTLSF::free(void *ptr, size_t size) {
 }
 
 void ZPageOptimizedTLSF::free_range(void *start_ptr, size_t size) {
+  TLSFBlockHeader *blk = (TLSFBlockHeader *)start_ptr;
+  blk->size = size;
+  insert_block(blk);
+}
+
+/*
+void ZPageOptimizedTLSF::free_range(void *start_ptr, size_t size) {
   uintptr_t range_start = (uintptr_t)start_ptr;
   uintptr_t range_end = range_start + size;
 
@@ -627,6 +634,7 @@ void ZPageOptimizedTLSF::free_range(void *start_ptr, size_t size) {
     insert_block(blk);
   }
 }
+*/
 
 void ZPageOptimizedTLSF::aggregate() {
   TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);

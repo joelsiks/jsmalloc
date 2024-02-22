@@ -66,7 +66,10 @@ void free_range_test() {
   t.print_phys_blks();
   std::cout << "---------------\n";
 
+  size_map[(void *)pool] = 32;
   t.free_range((void *)((uintptr_t)pool + 32), 32);
+  size_map[(void *)((uintptr_t)pool + 64)] = 64;
+
   t.print_phys_blks();
   //t.free_range((void *)((uintptr_t)pool + 48), 16);
   //std::cout << "---------------\n";
@@ -196,13 +199,13 @@ void zero_test() {
 }
 
 int main() {
-  basic_test();
-  constructor_test();
+  //basic_test();
+  //constructor_test();
   free_range_test();
-  deferred_coalescing_test();
-  CUnit_initialize_test();
-  optimized_test();
-  benchmark_comparison_untimed();
-  benchmark_comparison();
-  zero_test();
+  //deferred_coalescing_test();
+  //CUnit_initialize_test();
+  //optimized_test();
+  //benchmark_comparison_untimed();
+  //benchmark_comparison();
+  //zero_test();
 }
