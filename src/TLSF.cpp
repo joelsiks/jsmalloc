@@ -48,9 +48,9 @@ void TLSFBlockHeader::unmark_last() {
 }
 
 template<typename Config>
-TLSFBase<Config>::TLSFBase(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func) {
+TLSFBase<Config>::TLSFBase(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
   _size_func = size_func;
-  initialize(initial_pool, pool_size);
+  initialize(initial_pool, pool_size, start_full);
 }
 
 template<typename Config>
@@ -163,7 +163,7 @@ void TLSFBase<Config>::print_free_lists() {
 }
 
 template<typename Config>
-void TLSFBase<Config>::initialize(uintptr_t initial_pool, size_t pool_size) {
+void TLSFBase<Config>::initialize(uintptr_t initial_pool, size_t pool_size, bool start_full) {
   uintptr_t aligned_initial_block = TLSFUtil::align_up(initial_pool, _alignment);
   _block_start = aligned_initial_block;
 
@@ -172,7 +172,7 @@ void TLSFBase<Config>::initialize(uintptr_t initial_pool, size_t pool_size) {
   size_t aligned_block_size = TLSFUtil::align_down(pool_size - (aligned_initial_block - initial_pool), _mbs);
   _pool_size = aligned_block_size;
 
-  reset(false);
+  reset(start_full);
 }
 
 template<typename Config>
@@ -308,9 +308,14 @@ TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size
 
 template<typename Config>
 TLSFBlockHeader *TLSFBase<Config>::get_next_phys_block(TLSFBlockHeader *blk) {
-  return blk->is_last() 
-    ? nullptr 
-    : (TLSFBlockHeader *)((uintptr_t)blk + _block_header_length + blk_get_size(blk));
+  if(blk == nullptr) {
+    return nullptr;
+  }
+
+  uintptr_t next = (uintptr_t)blk + _block_header_length + blk_get_size(blk);
+  return ptr_in_pool(next)
+    ? (TLSFBlockHeader *)next
+    : nullptr;
 }
 
 template<typename Config>
@@ -530,9 +535,9 @@ void TLSFBase<TLSFZOptimizedConfig>::update_bitmap(TLSFMapping mapping, bool fre
   }
 }
 
-TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size) {
+TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size, bool start_full) {
   TLSF *tlsf = reinterpret_cast<TLSF *>(initial_pool);
-  return new(tlsf) TLSF(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF));
+  return new(tlsf) TLSF(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF), start_full);
 }
 
 void TLSF::free(void *ptr) {
@@ -565,9 +570,9 @@ size_t TLSF::get_allocated_size(void *address) {
   return blk->get_size();
 }
 
-ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func) {
+ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
   ZPageOptimizedTLSF *tlsf = reinterpret_cast<ZPageOptimizedTLSF *>(initial_pool);
-  return new(tlsf) ZPageOptimizedTLSF(initial_pool + sizeof(ZPageOptimizedTLSF), pool_size - sizeof(ZPageOptimizedTLSF), size_func);
+  return new(tlsf) ZPageOptimizedTLSF(initial_pool + sizeof(ZPageOptimizedTLSF), pool_size - sizeof(ZPageOptimizedTLSF), size_func, start_full);
 }
 
 void ZPageOptimizedTLSF::free(void *ptr, size_t size) {

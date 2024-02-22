@@ -62,9 +62,9 @@ void free_range_test() {
   const size_t pool_size = 128;
   uint8_t *pool = mmap_allocate(pool_size);
 
-  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping);
-  t.reset();
+  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping, true);
   t.print_phys_blks();
+  std::cout << "---------------\n";
 
   t.free_range((void *)((uintptr_t)pool + 32), 32);
   t.print_phys_blks();
@@ -77,7 +77,7 @@ void free_range_test() {
 void deferred_coalescing_test() {
   const size_t pool_size = 16 * 16 + 8;
   uint8_t *pool = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping);
+  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping, false);
 
   void *obj1 = t.allocate(1);
   memset(obj1, 0, 16);
@@ -133,7 +133,7 @@ void CUnit_initialize_test() {
 void optimized_test() {
   size_t pool_size = 1024;
   uint8_t *pool = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping);
+  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping, false);
 
   int *arr = (int *)t.allocate(128);
   size_map[arr] = 128;
@@ -153,7 +153,7 @@ void benchmark_comparison_untimed() {
   }
 
   uint8_t *pool2 = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF zalloc((uintptr_t)pool2, pool_size, size_mapping);
+  ZPageOptimizedTLSF zalloc((uintptr_t)pool2, pool_size, size_mapping, false);
 
   for(int i = 0; i < 400000; i++) {
     void *a = zalloc.allocate(32);
@@ -175,7 +175,7 @@ void benchmark_comparison() {
   std::cout << "General " << duration.count() << std::endl;;
 
   uint8_t *pool2 = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF zalloc((uintptr_t)pool2, pool_size, size_mapping);
+  ZPageOptimizedTLSF zalloc((uintptr_t)pool2, pool_size, size_mapping, false);
 
   start_time = std::chrono::high_resolution_clock::now();
   a = zalloc.allocate(32);
@@ -186,13 +186,23 @@ void benchmark_comparison() {
   std::cout << "Optimized " << duration.count() << std::endl;;
 }
 
+void zero_test() {
+  size_t pool_size = 1024;
+  uint8_t *pool = mmap_allocate(pool_size);
+  TLSF alloc((uintptr_t)pool, pool_size);
+
+  void *addr = alloc.allocate(0);
+  std::cout << "Got: " << addr << std::endl;
+}
+
 int main() {
-  //basic_test();
-  //constructor_test();
-  //free_range_test();
+  basic_test();
+  constructor_test();
+  free_range_test();
   deferred_coalescing_test();
-  //CUnit_initialize_test();
-  //optimized_test();
-  //benchmark_comparison_untimed();
-  //benchmark_comparison();
+  CUnit_initialize_test();
+  optimized_test();
+  benchmark_comparison_untimed();
+  benchmark_comparison();
+  zero_test();
 }

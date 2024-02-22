@@ -46,7 +46,7 @@ static size_t default_allocation_size(void *address) {
 template <typename Config>
 class TLSFBase {
 public:
-  TLSFBase(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func);
+  TLSFBase(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func, bool start_full);
 
   void reset(bool initial_block_allocated = true);
   void *allocate(size_t size);
@@ -81,7 +81,7 @@ protected:
   // We add an extra list for the optimized "large-list".
   TLSFBlockHeader* _blocks[_num_lists + 1];
 
-  void initialize(uintptr_t initial_pool, size_t pool_size);
+  void initialize(uintptr_t initial_pool, size_t pool_size, bool start_full);
 
   void insert_block(TLSFBlockHeader *blk);
 
@@ -141,10 +141,10 @@ public:
 
 class TLSF : public TLSFBase<TLSFBaseConfig> {
 public:
-  TLSF(uintptr_t initial_pool, size_t pool_size)
-    : TLSFBase(initial_pool, pool_size, default_allocation_size) {}
+  TLSF(uintptr_t initial_pool, size_t pool_size, bool start_full = false)
+    : TLSFBase(initial_pool, pool_size, default_allocation_size, start_full) {}
 
-  static TLSF *create(uintptr_t initial_pool, size_t pool_size);
+  static TLSF *create(uintptr_t initial_pool, size_t pool_size, bool start_full = false);
 
   void free(void *ptr);
 
@@ -153,10 +153,10 @@ public:
 
 class ZPageOptimizedTLSF : public TLSFBase<TLSFZOptimizedConfig> {
 public:
-  ZPageOptimizedTLSF(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func)
-    : TLSFBase(initial_pool, pool_size, size_func) {}
+  ZPageOptimizedTLSF(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func, bool start_full)
+    : TLSFBase(initial_pool, pool_size, size_func, start_full) {}
 
-  static ZPageOptimizedTLSF *create(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func);
+  static ZPageOptimizedTLSF *create(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func, bool start_full);
 
   void free(void *ptr, size_t size);
 
