@@ -9,19 +9,19 @@
 
 static const size_t MEMPOOL_SIZE = 1024 * 1000 * 2000;
 
-uint8_t *mempool = nullptr;
+void *mempool = nullptr;
 static TLSF *tlsf_allocator = nullptr;
 
 extern "C" {
 
   void initialize_tlsf() {
-    mempool = static_cast<uint8_t *>(mmap(nullptr, MEMPOOL_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+    mempool = static_cast<void *>(mmap(nullptr, MEMPOOL_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
     if(mempool == MAP_FAILED) {
       perror("mmap failed");
       exit(1);
     }
 
-    tlsf_allocator = TLSF::create((uintptr_t)mempool, MEMPOOL_SIZE);
+    tlsf_allocator = TLSF::create(mempool, MEMPOOL_SIZE);
   }
 
   void *calloc(size_t nmemb, size_t size) {
