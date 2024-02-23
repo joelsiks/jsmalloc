@@ -158,6 +158,7 @@ public:
 
   static ZPageOptimizedTLSF *create(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func, bool start_full);
 
+  void free(void *ptr);
   void free(void *ptr, size_t size);
 
   // This assumes that the range that is described by (address -> (address + range))

@@ -575,6 +575,14 @@ ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t po
   return new(tlsf) ZPageOptimizedTLSF(initial_pool + sizeof(ZPageOptimizedTLSF), pool_size - sizeof(ZPageOptimizedTLSF), size_func, start_full);
 }
 
+void ZPageOptimizedTLSF::free(void *ptr) {
+  if(ptr == nullptr) {
+    return;
+  }
+
+  free(ptr, _size_func(ptr));
+}
+
 void ZPageOptimizedTLSF::free(void *ptr, size_t size) {
   if(ptr == nullptr) {
     return;
