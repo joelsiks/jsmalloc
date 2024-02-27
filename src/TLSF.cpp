@@ -599,50 +599,10 @@ void ZPageOptimizedTLSF::free(void *ptr, size_t size) {
 }
 
 void ZPageOptimizedTLSF::free_range(void *start_ptr, size_t size) {
-  TLSFBlockHeader *blk = (TLSFBlockHeader *)start_ptr;
+  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(start_ptr);
   blk->size = size;
   insert_block(blk);
 }
-
-/*
-void ZPageOptimizedTLSF::free_range(void *start_ptr, size_t size) {
-  uintptr_t range_start = (uintptr_t)start_ptr;
-  uintptr_t range_end = range_start + size;
-
-  TLSFBlockHeader *blk = get_block_containing_address(range_start);
-  uintptr_t blk_start = (uintptr_t)blk;
-  uintptr_t blk_end = blk_start + blk->get_size();
-
-  // If the range start and end are not in the same block, the user is calling
-  // this function wrong and we return.
-  if(blk != get_block_containing_address(range_end)) {
-    return;
-  }
-
-  // Case 1: The range is inside the block but not touching any borders.
-  if(range_start > blk_start && range_end < blk_end) {
-    size_t left_size = range_start - blk_start;
-    TLSFBlockHeader *free_blk = split_block(blk, left_size);
-    split_block(free_blk, size);
-    insert_block(free_blk);
-
-  // Case 2: If the range is the entire block, we just free the block.
-  } else if(range_start == blk_start && range_end == blk_end) {
-    free(reinterpret_cast<TLSFBlockHeader *>(blk_start), _pool_size);
-
-  // Case 3: The range is touching the block end.
-  } else if(range_end == blk_end) {
-    size_t split_size = range_start - blk_start;
-    insert_block(split_block(blk, split_size));
-
-  // Case 4: The range is touching the block start.
-  } else if(range_start == blk_start) {
-    size_t split_size = range_end - blk_start;
-    split_block(blk, split_size);
-    insert_block(blk);
-  }
-}
-*/
 
 void ZPageOptimizedTLSF::aggregate() {
   TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
