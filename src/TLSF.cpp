@@ -48,9 +48,9 @@ void TLSFBlockHeader::unmark_last() {
 }
 
 template<typename Config>
-TLSFBase<Config>::TLSFBase(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
+TLSFBase<Config>::TLSFBase(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
   _size_func = size_func;
-  initialize(initial_pool, pool_size, start_full);
+  initialize(pool, pool_size, start_full);
 }
 
 template<typename Config>
@@ -163,13 +163,13 @@ void TLSFBase<Config>::print_free_lists() {
 }
 
 template<typename Config>
-void TLSFBase<Config>::initialize(uintptr_t initial_pool, size_t pool_size, bool start_full) {
-  uintptr_t aligned_initial_block = TLSFUtil::align_up(initial_pool, _alignment);
+void TLSFBase<Config>::initialize(void *pool, size_t pool_size, bool start_full) {
+  uintptr_t aligned_initial_block = TLSFUtil::align_up((uintptr_t)pool, _alignment);
   _block_start = aligned_initial_block;
 
   // The pool size is shrinked to the initial aligned block size. This wastes
   // at maximum (_mbs - 1) bytes
-  size_t aligned_block_size = TLSFUtil::align_down(pool_size - (aligned_initial_block - initial_pool), _mbs);
+  size_t aligned_block_size = TLSFUtil::align_down(pool_size - (aligned_initial_block - (uintptr_t)pool), _mbs);
   _pool_size = aligned_block_size;
 
   reset(start_full);
@@ -535,9 +535,9 @@ void TLSFBase<TLSFZOptimizedConfig>::update_bitmap(TLSFMapping mapping, bool fre
   }
 }
 
-TLSF *TLSF::create(uintptr_t initial_pool, size_t pool_size, bool start_full) {
-  TLSF *tlsf = reinterpret_cast<TLSF *>(initial_pool);
-  return new(tlsf) TLSF(initial_pool + sizeof(TLSF), pool_size - sizeof(TLSF), start_full);
+TLSF *TLSF::create(void *pool, size_t pool_size, bool start_full) {
+  TLSF *tlsf = reinterpret_cast<TLSF *>(pool);
+  return new(tlsf) TLSF(reinterpret_cast<void *>((uintptr_t)pool + sizeof(TLSF)), pool_size - sizeof(TLSF), start_full);
 }
 
 void TLSF::free(void *ptr) {
@@ -570,9 +570,17 @@ size_t TLSF::get_allocated_size(void *address) {
   return blk->get_size();
 }
 
-ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(uintptr_t initial_pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
-  ZPageOptimizedTLSF *tlsf = reinterpret_cast<ZPageOptimizedTLSF *>(initial_pool);
-  return new(tlsf) ZPageOptimizedTLSF(initial_pool + sizeof(ZPageOptimizedTLSF), pool_size - sizeof(ZPageOptimizedTLSF), size_func, start_full);
+ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
+  ZPageOptimizedTLSF *tlsf = reinterpret_cast<ZPageOptimizedTLSF *>(pool);
+  return new(tlsf) ZPageOptimizedTLSF(reinterpret_cast<void *>((uintptr_t)pool + sizeof(ZPageOptimizedTLSF)), pool_size - sizeof(ZPageOptimizedTLSF), size_func, start_full);
+}
+
+void ZPageOptimizedTLSF::free(void *ptr) {
+  if(ptr == nullptr) {
+    return;
+  }
+
+  free(ptr, _size_func(ptr));
 }
 
 void ZPageOptimizedTLSF::free(void *ptr, size_t size) {
@@ -591,41 +599,9 @@ void ZPageOptimizedTLSF::free(void *ptr, size_t size) {
 }
 
 void ZPageOptimizedTLSF::free_range(void *start_ptr, size_t size) {
-  uintptr_t range_start = (uintptr_t)start_ptr;
-  uintptr_t range_end = range_start + size;
-
-  TLSFBlockHeader *blk = get_block_containing_address(range_start);
-  uintptr_t blk_start = (uintptr_t)blk;
-  uintptr_t blk_end = blk_start + blk->get_size();
-
-  // If the range start and end are not in the same block, the user is calling
-  // this function wrong and we return.
-  if(blk != get_block_containing_address(range_end)) {
-    return;
-  }
-
-  // Case 1: The range is inside the block but not touching any borders.
-  if(range_start > blk_start && range_end < blk_end) {
-    size_t left_size = range_start - blk_start;
-    TLSFBlockHeader *free_blk = split_block(blk, left_size);
-    split_block(free_blk, size);
-    insert_block(free_blk);
-
-  // Case 2: If the range is the entire block, we just free the block.
-  } else if(range_start == blk_start && range_end == blk_end) {
-    free(reinterpret_cast<TLSFBlockHeader *>(blk_start), _pool_size);
-
-  // Case 3: The range is touching the block end.
-  } else if(range_end == blk_end) {
-    size_t split_size = range_start - blk_start;
-    insert_block(split_block(blk, split_size));
-
-  // Case 4: The range is touching the block start.
-  } else if(range_start == blk_start) {
-    size_t split_size = range_end - blk_start;
-    split_block(blk, split_size);
-    insert_block(blk);
-  }
+  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(start_ptr);
+  blk->size = size;
+  insert_block(blk);
 }
 
 void ZPageOptimizedTLSF::aggregate() {

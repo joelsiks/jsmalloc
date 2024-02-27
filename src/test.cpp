@@ -18,7 +18,7 @@ uint8_t *mmap_allocate(size_t pool_size) {
 void basic_test() {
   const size_t pool_size = sizeof(TLSF) + 1024 * 1000;
   uint8_t *pool = mmap_allocate(pool_size);
-  TLSF *t = TLSF::create((uintptr_t)pool, pool_size);
+  TLSF *t = TLSF::create(pool, pool_size);
 
   void *ptr1 = t->allocate(1);
   assert(ptr1 != nullptr);
@@ -39,7 +39,7 @@ void basic_test() {
 void constructor_test() {
   const size_t pool_size = 32 * 16 + 16;
   uint8_t *pool = mmap_allocate(pool_size);
-  TLSF t((uintptr_t)pool, pool_size);
+  TLSF t(pool, pool_size);
 
   void *a = t.allocate(1);
   t.allocate(1);
@@ -62,11 +62,14 @@ void free_range_test() {
   const size_t pool_size = 128;
   uint8_t *pool = mmap_allocate(pool_size);
 
-  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping, true);
+  ZPageOptimizedTLSF t(pool, pool_size, size_mapping, true);
   t.print_phys_blks();
   std::cout << "---------------\n";
 
+  size_map[(void *)pool] = 32;
   t.free_range((void *)((uintptr_t)pool + 32), 32);
+  size_map[(void *)((uintptr_t)pool + 64)] = 64;
+
   t.print_phys_blks();
   //t.free_range((void *)((uintptr_t)pool + 48), 16);
   //std::cout << "---------------\n";
@@ -77,7 +80,7 @@ void free_range_test() {
 void deferred_coalescing_test() {
   const size_t pool_size = 16 * 16 + 8;
   uint8_t *pool = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping, false);
+  ZPageOptimizedTLSF t(pool, pool_size, size_mapping, false);
 
   void *obj1 = t.allocate(1);
   memset(obj1, 0, 16);
@@ -121,7 +124,7 @@ void deferred_coalescing_test() {
 void CUnit_initialize_test() {
   size_t pool_size = 10000 * 1024;
   uint8_t *pool = mmap_allocate(pool_size);
-  TLSF *tl = TLSF::create((uintptr_t)pool, 10000 * 1024);
+  TLSF *tl = TLSF::create(pool, 10000 * 1024);
 
   tl->allocate(3000000000000);
   tl->allocate(72704);
@@ -133,7 +136,7 @@ void CUnit_initialize_test() {
 void optimized_test() {
   size_t pool_size = 1024;
   uint8_t *pool = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF t((uintptr_t)pool, pool_size, size_mapping, false);
+  ZPageOptimizedTLSF t(pool, pool_size, size_mapping, false);
 
   int *arr = (int *)t.allocate(128);
   size_map[arr] = 128;
@@ -145,7 +148,7 @@ void optimized_test() {
 void benchmark_comparison_untimed() {
   size_t pool_size = 20000 * 1024;
   uint8_t *pool1 = mmap_allocate(pool_size);
-  TLSF alloc((uintptr_t)pool1, pool_size);
+  TLSF alloc(pool1, pool_size);
   
   for(int i = 0; i < 400000; i++) {
     void *a = alloc.allocate(32);
@@ -153,7 +156,7 @@ void benchmark_comparison_untimed() {
   }
 
   uint8_t *pool2 = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF zalloc((uintptr_t)pool2, pool_size, size_mapping, false);
+  ZPageOptimizedTLSF zalloc(pool2, pool_size, size_mapping, false);
 
   for(int i = 0; i < 400000; i++) {
     void *a = zalloc.allocate(32);
@@ -164,7 +167,7 @@ void benchmark_comparison_untimed() {
 void benchmark_comparison() {
   size_t pool_size = 2000 * 1024;
   uint8_t *pool1 = mmap_allocate(pool_size);
-  TLSF alloc((uintptr_t)pool1, pool_size);
+  TLSF alloc(pool1, pool_size);
   
   auto start_time = std::chrono::high_resolution_clock::now();
   void *a = alloc.allocate(32);
@@ -175,7 +178,7 @@ void benchmark_comparison() {
   std::cout << "General " << duration.count() << std::endl;;
 
   uint8_t *pool2 = mmap_allocate(pool_size);
-  ZPageOptimizedTLSF zalloc((uintptr_t)pool2, pool_size, size_mapping, false);
+  ZPageOptimizedTLSF zalloc(pool2, pool_size, size_mapping, false);
 
   start_time = std::chrono::high_resolution_clock::now();
   a = zalloc.allocate(32);
@@ -189,20 +192,20 @@ void benchmark_comparison() {
 void zero_test() {
   size_t pool_size = 1024;
   uint8_t *pool = mmap_allocate(pool_size);
-  TLSF alloc((uintptr_t)pool, pool_size);
+  TLSF alloc(pool, pool_size);
 
   void *addr = alloc.allocate(0);
   std::cout << "Got: " << addr << std::endl;
 }
 
 int main() {
-  basic_test();
-  constructor_test();
+  //basic_test();
+  //constructor_test();
   free_range_test();
-  deferred_coalescing_test();
-  CUnit_initialize_test();
-  optimized_test();
-  benchmark_comparison_untimed();
-  benchmark_comparison();
-  zero_test();
+  //deferred_coalescing_test();
+  //CUnit_initialize_test();
+  //optimized_test();
+  //benchmark_comparison_untimed();
+  //benchmark_comparison();
+  //zero_test();
 }
