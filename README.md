@@ -1,6 +1,9 @@
-# Two Level Segregated Fit (TLSF)
 
-Reference:
+# jsmalloc
+
+jsmalloc is both a general purpose malloc(3) implementation and optimized implementation, tailored to be used in ZGC, a garbage collector in the [HotSpot JVM]("https://en.wikipedia.org/wiki/HotSpot_(virtual_machine)"). jsmalloc is largely based on the Two-Level Segregated Fit (TLSF) allocator by M. Masmano et al, especially in the general purpose version of the allocator. However, the optimized version for ZGC differs in several ways from the base TLSF design.
+
+TLSF Reference:
 ```
 M. Masmano, I. Ripoll, A. Crespo and J. Real
 TLSF: a new dynamic memory allocator for real-time systems
@@ -9,22 +12,20 @@ Proceedings. 16th Euromicro Conference on Real-Time Systems, 2004. ECRTS 2004., 
 
 The implementation is written in C++14 for 64-bit machines exclusively and uses some compiler intrinsics (`__builtin_ffsl`, `__builtin_clzl`).
 
+The name jsmalloc is not associated with JavaScript in any way but is taken from the author's initials.
+
 ## Real-World Testing
 
-To easily test the allocator in practice using real-world programs we have provided a wrapper around malloc/calloc and free.
-To compile a shared library which can be preloaded when running a program, run:
+To easily test the allocator in practice using real-world programs we provide a wrapper around malloc/calloc/realloc/free that can be compiled to a shared library.
 ```bash
-make sharedlib # Produces a file called libtlsf.so
-LD_PRELOAD=./libtlsf.so ./<some program>
+make sharedlib # Produces the file libjsmalloc.so
+LD_PRELOAD=./libjsmalloc.so ./<some program>
 ```
 
-## TODO
-
-Fragmentation metrics
-    - Internal fragmentation (wasted space du to alignment)
-    - External fragmentation [calc](https://stackoverflow.com/questions/4586972/how-to-calculate-fragmentation)
-
-Utforska concurrency.
+In some cases it might also be interested/useful to log the distribution of allocation requests. This can be done by setting the `LOG_ALLOC` environment variable to a file in which the allocations should be written to.
+```bash
+LOG_ALLOC=output.txt LD_PRELOAD=./libjsmalloc.so ./<some program>
+```
 
 ## Author
 Joel Sikström

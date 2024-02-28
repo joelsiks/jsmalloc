@@ -6,55 +6,55 @@
 #include <cassert>
 #include <limits>
 
-#include "TLSF.hpp"
-#include "TLSFUtil.inline.hpp"
+#include "JSMalloc.hpp"
+#include "JSMallocUtil.inline.hpp"
 
-template class TLSFBase<TLSFBaseConfig>;
-template class TLSFBase<TLSFZOptimizedConfig>;
+template class JSMallocBase<BaseConfig>;
+template class JSMallocBase<ZOptimizedConfig>;
 
 // Contains first- and second-level index to segregated lists
 // In the case of the optimized version, only the fl mapping is used.
-struct TLSFMapping { 
+struct Mapping { 
   static const uint32_t UNABLE_TO_FIND = std::numeric_limits<uint32_t>::max();
   size_t fl, sl;
 };
 
-size_t TLSFBlockHeader::get_size() {
+size_t BlockHeader::get_size() {
   return size & ~(_BlockFreeMask | _BlockLastMask);
 }
 
-bool TLSFBlockHeader::is_free() {
+bool BlockHeader::is_free() {
   return (size & _BlockFreeMask) == _BlockFreeMask;
 }
 
-bool TLSFBlockHeader::is_last() {
+bool BlockHeader::is_last() {
   return (size & _BlockLastMask) == _BlockLastMask;
 }
 
-void TLSFBlockHeader::mark_free() {
+void BlockHeader::mark_free() {
     size |= _BlockFreeMask;
 }
 
-void TLSFBlockHeader::mark_used() {
+void BlockHeader::mark_used() {
     size &= ~_BlockFreeMask;
 }
 
-void TLSFBlockHeader::mark_last() {
+void BlockHeader::mark_last() {
   size |= _BlockLastMask;
 }
 
-void TLSFBlockHeader::unmark_last() {
+void BlockHeader::unmark_last() {
   size &= ~_BlockLastMask;
 }
 
 template<typename Config>
-TLSFBase<Config>::TLSFBase(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
+JSMallocBase<Config>::JSMallocBase(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
   _size_func = size_func;
   initialize(pool, pool_size, start_full);
 }
 
 template<typename Config>
-void TLSFBase<Config>::reset(bool initial_block_allocated) {
+void JSMallocBase<Config>::reset(bool initial_block_allocated) {
   // Initialize bitmap and blocks
   _fl_bitmap = 0;
   for(size_t i = 0; i < _fl_index; i++) {
@@ -68,7 +68,7 @@ void TLSFBase<Config>::reset(bool initial_block_allocated) {
   }
   _blocks[_num_lists] = nullptr;
 
-  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
+  BlockHeader *blk = reinterpret_cast<BlockHeader *>(_block_start);
   blk->size = _pool_size - _block_header_length;
   if(!Config::DeferredCoalescing) {
     blk->prev_phys_block = nullptr;
@@ -86,8 +86,8 @@ void TLSFBase<Config>::reset(bool initial_block_allocated) {
 }
 
 template<typename Config>
-void *TLSFBase<Config>::allocate(size_t size) {
-  TLSFBlockHeader *blk = find_block(size);
+void *JSMallocBase<Config>::allocate(size_t size) {
+  BlockHeader *blk = find_block(size);
 
   if(blk == nullptr) {
     return nullptr;
@@ -101,7 +101,7 @@ void *TLSFBase<Config>::allocate(size_t size) {
 }
 
 template<typename Config>
-void TLSFBase<Config>::print_blk(TLSFBlockHeader *blk) {
+void JSMallocBase<Config>::print_blk(BlockHeader *blk) {
   std::cout << "Block (@ " << blk << ")\n" 
             << " size=" << blk_get_size(blk) << "\n"
             << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << " (not accurate)\n";
@@ -118,8 +118,8 @@ void TLSFBase<Config>::print_blk(TLSFBlockHeader *blk) {
 }
 
 template<typename Config>
-void TLSFBase<Config>::print_phys_blks() {
-  TLSFBlockHeader *current = reinterpret_cast<TLSFBlockHeader *>(_block_start);
+void JSMallocBase<Config>::print_phys_blks() {
+  BlockHeader *current = reinterpret_cast<BlockHeader *>(_block_start);
 
   while(current != nullptr) {
     print_blk(current);
@@ -128,7 +128,7 @@ void TLSFBase<Config>::print_phys_blks() {
 }
 
 template<typename Config>
-void TLSFBase<Config>::print_free_lists() {
+void JSMallocBase<Config>::print_free_lists() {
   for(size_t i = 0; i < 64; i++) {
     if((_fl_bitmap & (1UL << i)) == 0) {
       continue;
@@ -141,7 +141,7 @@ void TLSFBase<Config>::print_free_lists() {
         }
 
         printf("FREE-LIST (%02ld): ", i * _fl_index + j);
-        TLSFBlockHeader *current = _blocks[flatten_mapping({i, j})];
+        BlockHeader *current = _blocks[flatten_mapping({i, j})];
         while(current != nullptr) {
           std::cout << current << " -> ";
           current = blk_get_next(current);
@@ -151,7 +151,7 @@ void TLSFBase<Config>::print_free_lists() {
 
     } else {
       printf("FREE-LIST (%02ld): ", i);
-      TLSFBlockHeader *current = _blocks[i];
+      BlockHeader *current = _blocks[i];
       while(current != nullptr) {
         std::cout << current << " -> ";
         current = blk_get_next(current);
@@ -163,24 +163,24 @@ void TLSFBase<Config>::print_free_lists() {
 }
 
 template<typename Config>
-void TLSFBase<Config>::initialize(void *pool, size_t pool_size, bool start_full) {
-  uintptr_t aligned_initial_block = TLSFUtil::align_up((uintptr_t)pool, _alignment);
+void JSMallocBase<Config>::initialize(void *pool, size_t pool_size, bool start_full) {
+  uintptr_t aligned_initial_block = JSMallocUtil::align_up((uintptr_t)pool, _alignment);
   _block_start = aligned_initial_block;
 
   // The pool size is shrinked to the initial aligned block size. This wastes
   // at maximum (_mbs - 1) bytes
-  size_t aligned_block_size = TLSFUtil::align_down(pool_size - (aligned_initial_block - (uintptr_t)pool), _mbs);
+  size_t aligned_block_size = JSMallocUtil::align_down(pool_size - (aligned_initial_block - (uintptr_t)pool), _mbs);
   _pool_size = aligned_block_size;
 
   reset(start_full);
 }
 
 template<typename Config>
-void TLSFBase<Config>::insert_block(TLSFBlockHeader *blk) {
-  TLSFMapping mapping = get_mapping(blk_get_size(blk));
+void JSMallocBase<Config>::insert_block(BlockHeader *blk) {
+  Mapping mapping = get_mapping(blk_get_size(blk));
   uint32_t flat_mapping = flatten_mapping(mapping);
 
-  TLSFBlockHeader *head = _blocks[flat_mapping];
+  BlockHeader *head = _blocks[flat_mapping];
 
   // Insert the block into its corresponding free-list
   if(head != nullptr) {
@@ -198,21 +198,21 @@ void TLSFBase<Config>::insert_block(TLSFBlockHeader *blk) {
 }
 
 template<typename Config>
-TLSFBlockHeader *TLSFBase<Config>::find_block(size_t size) {
+BlockHeader *JSMallocBase<Config>::find_block(size_t size) {
   size_t aligned_size = align_size(size);
-  TLSFMapping mapping = find_suitable_mapping(aligned_size);
+  Mapping mapping = find_suitable_mapping(aligned_size);
 
-  if(mapping.sl == TLSFMapping::UNABLE_TO_FIND) {
+  if(mapping.sl == Mapping::UNABLE_TO_FIND) {
     return nullptr;
   }
 
   // By now we now that we have an available block to use
-  TLSFBlockHeader *blk = remove_block(nullptr, mapping);
+  BlockHeader *blk = remove_block(nullptr, mapping);
 
   // If the block is larger than some threshold relative to the requested size
   // it should be split up to minimize internal fragmentation
   if((blk->get_size() - aligned_size) >= (_mbs + _block_header_length)) {
-    TLSFBlockHeader *remainder_blk = split_block(blk, aligned_size);
+    BlockHeader *remainder_blk = split_block(blk, aligned_size);
     insert_block(remainder_blk);
   }
 
@@ -220,7 +220,7 @@ TLSFBlockHeader *TLSFBase<Config>::find_block(size_t size) {
 }
 
 template<typename Config>
-TLSFBlockHeader *TLSFBase<Config>::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBlockHeader *blk2) {
+BlockHeader *JSMallocBase<Config>::coalesce_blocks(BlockHeader *blk1, BlockHeader *blk2) {
   size_t blk2_size = blk2->get_size();
   remove_block(blk1, get_mapping(blk1->get_size()));
   remove_block(blk2, get_mapping(blk2_size));
@@ -236,7 +236,7 @@ TLSFBlockHeader *TLSFBase<Config>::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBl
   } else if(!Config::DeferredCoalescing) {
     // We only want to re-point the prev_phys_block ptr if we are not deferring
     // coalescing
-    TLSFBlockHeader *next = get_next_phys_block(blk1);
+    BlockHeader *next = get_next_phys_block(blk1);
     next->prev_phys_block = blk1;
   }
 
@@ -244,9 +244,9 @@ TLSFBlockHeader *TLSFBase<Config>::coalesce_blocks(TLSFBlockHeader *blk1, TLSFBl
 }
 
 template<typename Config>
-TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMapping mapping) {
+BlockHeader *JSMallocBase<Config>::remove_block(BlockHeader *blk, Mapping mapping) {
   uint32_t flat_mapping = flatten_mapping(mapping);
-  TLSFBlockHeader *target = blk;
+  BlockHeader *target = blk;
 
   if(blk == nullptr) {
     target = _blocks[flat_mapping];
@@ -279,7 +279,7 @@ TLSFBlockHeader *TLSFBase<Config>::remove_block(TLSFBlockHeader *blk, TLSFMappin
 }
 
 template<typename Config>
-TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size) {
+BlockHeader *JSMallocBase<Config>::split_block(BlockHeader *blk, size_t size) {
   size_t remainder_size = blk_get_size(blk) - _block_header_length - size;
 
   // Needs to be checked before setting new size
@@ -289,7 +289,7 @@ TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size
   blk->size = size;
 
   // Use a portion of blk's memory for the new block
-  TLSFBlockHeader *remainder_blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)blk + _block_header_length + blk_get_size(blk));
+  BlockHeader *remainder_blk = reinterpret_cast<BlockHeader *>((uintptr_t)blk + _block_header_length + blk_get_size(blk));
   remainder_blk->size = remainder_size;
   if(!Config::DeferredCoalescing) {
     remainder_blk->prev_phys_block = blk;
@@ -299,7 +299,7 @@ TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size
     blk->unmark_last();
     remainder_blk->mark_last();
   } else if(!Config::DeferredCoalescing) {
-    TLSFBlockHeader *next_phys = get_next_phys_block(remainder_blk);
+    BlockHeader *next_phys = get_next_phys_block(remainder_blk);
     next_phys->prev_phys_block = remainder_blk;
   }
 
@@ -307,21 +307,21 @@ TLSFBlockHeader *TLSFBase<Config>::split_block(TLSFBlockHeader *blk, size_t size
 }
 
 template<typename Config>
-TLSFBlockHeader *TLSFBase<Config>::get_next_phys_block(TLSFBlockHeader *blk) {
+BlockHeader *JSMallocBase<Config>::get_next_phys_block(BlockHeader *blk) {
   if(blk == nullptr) {
     return nullptr;
   }
 
   uintptr_t next = (uintptr_t)blk + _block_header_length + blk_get_size(blk);
   return ptr_in_pool(next)
-    ? (TLSFBlockHeader *)next
+    ? (BlockHeader *)next
     : nullptr;
 }
 
 template<typename Config>
-TLSFBlockHeader *TLSFBase<Config>::get_block_containing_address(uintptr_t address) {
+BlockHeader *JSMallocBase<Config>::get_block_containing_address(uintptr_t address) {
   uintptr_t target_addr = (uintptr_t)address;
-  TLSFBlockHeader *current = reinterpret_cast<TLSFBlockHeader *>(_block_start);
+  BlockHeader *current = reinterpret_cast<BlockHeader *>(_block_start);
 
   while(current != nullptr) {
     uintptr_t start = (uintptr_t)current;
@@ -338,66 +338,66 @@ TLSFBlockHeader *TLSFBase<Config>::get_block_containing_address(uintptr_t addres
 }
 
 template<typename Config>
-bool TLSFBase<Config>::ptr_in_pool(uintptr_t ptr) {
+bool JSMallocBase<Config>::ptr_in_pool(uintptr_t ptr) {
   return ptr >= _block_start && ptr < (_block_start + _pool_size);
 }
 
 template<typename Config>
-size_t TLSFBase<Config>::align_size(size_t size) {
+size_t JSMallocBase<Config>::align_size(size_t size) {
   if(size == 0) {
     size = 1;
   }
 
-  return TLSFUtil::align_up(size, _mbs);
+  return JSMallocUtil::align_up(size, _mbs);
 }
 
 template<>
-size_t TLSFBase<TLSFBaseConfig>::blk_get_size(TLSFBlockHeader *blk) {
+size_t JSMallocBase<BaseConfig>::blk_get_size(BlockHeader *blk) {
   return blk->get_size();
 }
 
 template<>
-TLSFBlockHeader *TLSFBase<TLSFBaseConfig>::blk_get_next(TLSFBlockHeader *blk) {
-  return reinterpret_cast<TLSFBlockHeader *>(blk->f1);
+BlockHeader *JSMallocBase<BaseConfig>::blk_get_next(BlockHeader *blk) {
+  return reinterpret_cast<BlockHeader *>(blk->f1);
 }
 
 template<>
-TLSFBlockHeader *TLSFBase<TLSFBaseConfig>::blk_get_prev(TLSFBlockHeader *blk) {
-  return reinterpret_cast<TLSFBlockHeader *>(blk->f2);
+BlockHeader *JSMallocBase<BaseConfig>::blk_get_prev(BlockHeader *blk) {
+  return reinterpret_cast<BlockHeader *>(blk->f2);
 }
 
 template<>
-void TLSFBase<TLSFBaseConfig>::blk_set_next(TLSFBlockHeader *blk, TLSFBlockHeader *next) {
+void JSMallocBase<BaseConfig>::blk_set_next(BlockHeader *blk, BlockHeader *next) {
   blk->f1 = reinterpret_cast<uint64_t>(next);
 }
 
 template<>
-void TLSFBase<TLSFBaseConfig>::blk_set_prev(TLSFBlockHeader *blk, TLSFBlockHeader *prev) {
+void JSMallocBase<BaseConfig>::blk_set_prev(BlockHeader *blk, BlockHeader *prev) {
   blk->f2 = reinterpret_cast<uint64_t>(prev);
 }
 
 template <>
-TLSFMapping TLSFBase<TLSFBaseConfig>::get_mapping(size_t size) {
-  uint32_t fl = TLSFUtil::ilog2(size);
+Mapping JSMallocBase<BaseConfig>::get_mapping(size_t size) {
+  uint32_t fl = JSMallocUtil::ilog2(size);
   uint32_t sl = (size >> (fl - _sl_index_log2)) ^ (1 << _sl_index_log2);
   return {fl, sl};
 }
 
 template <>
-uint32_t TLSFBase<TLSFBaseConfig>::flatten_mapping(TLSFMapping mapping) {
+uint32_t JSMallocBase<BaseConfig>::flatten_mapping(Mapping mapping) {
   return mapping.fl * _sl_index + mapping.sl;
 }
 
 template <>
-TLSFMapping TLSFBase<TLSFBaseConfig>::find_suitable_mapping(size_t aligned_size) {
-  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
+Mapping JSMallocBase<BaseConfig>::find_suitable_mapping(size_t aligned_size) {
+  size_t target_size = aligned_size + (1UL << (JSMallocUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
 
   // With the mapping we search for a free block
-  TLSFMapping mapping = get_mapping(target_size);
+  Mapping mapping = get_mapping(target_size);
 
   // If the first-level index is out of bounds, the request cannot be fulfilled
   if(mapping.fl >= _fl_index) {
-    return {0, TLSFMapping::UNABLE_TO_FIND};
+    return {0, Mapping::UNABLE_TO_FIND};
   }
 
   uint32_t sl_map = _sl_bitmap[mapping.fl] & (~0UL << mapping.sl);
@@ -407,20 +407,20 @@ TLSFMapping TLSFBase<TLSFBaseConfig>::find_suitable_mapping(size_t aligned_size)
     uint32_t fl_map = _fl_bitmap & (~0UL << (mapping.fl + 1));
     if(fl_map == 0) {
       // No suitable block exists
-      return {0, TLSFMapping::UNABLE_TO_FIND};
+      return {0, Mapping::UNABLE_TO_FIND};
     }
 
-    mapping.fl = TLSFUtil::ffs(fl_map);
+    mapping.fl = JSMallocUtil::ffs(fl_map);
     sl_map = _sl_bitmap[mapping.fl];
   }
 
-  mapping.sl = TLSFUtil::ffs(sl_map);
+  mapping.sl = JSMallocUtil::ffs(sl_map);
 
   return mapping;
 }
 
 template <>
-void TLSFBase<TLSFBaseConfig>::update_bitmap(TLSFMapping mapping, bool free_update) {
+void JSMallocBase<BaseConfig>::update_bitmap(Mapping mapping, bool free_update) {
   if(free_update) {
     _fl_bitmap |= (1 << mapping.fl);
     _sl_bitmap[mapping.fl] |= (1 << mapping.sl);
@@ -433,7 +433,7 @@ void TLSFBase<TLSFBaseConfig>::update_bitmap(TLSFMapping mapping, bool free_upda
 }
 
 template<>
-size_t TLSFBase<TLSFZOptimizedConfig>::blk_get_size(TLSFBlockHeader *blk) {
+size_t JSMallocBase<ZOptimizedConfig>::blk_get_size(BlockHeader *blk) {
   size_t size = _size_func(reinterpret_cast<void *>(blk));
 
   if(size == 0) {
@@ -444,29 +444,29 @@ size_t TLSFBase<TLSFZOptimizedConfig>::blk_get_size(TLSFBlockHeader *blk) {
 }
 
 template<>
-TLSFBlockHeader *TLSFBase<TLSFZOptimizedConfig>::blk_get_next(TLSFBlockHeader *blk) {
+BlockHeader *JSMallocBase<ZOptimizedConfig>::blk_get_next(BlockHeader *blk) {
   uintptr_t offset = static_cast<uint32_t>(blk->f1 >> 32);
 
   if(offset == std::numeric_limits<uint32_t>::max()) {
     return nullptr;
   } else {
-    return reinterpret_cast<TLSFBlockHeader *>(_block_start + offset);
+    return reinterpret_cast<BlockHeader *>(_block_start + offset);
   }
 }
 
 template<>
-TLSFBlockHeader *TLSFBase<TLSFZOptimizedConfig>::blk_get_prev(TLSFBlockHeader *blk) {
+BlockHeader *JSMallocBase<ZOptimizedConfig>::blk_get_prev(BlockHeader *blk) {
   uintptr_t offset = static_cast<uint32_t>(blk->f1 & 0xFFFFFFFF);
 
   if(offset == std::numeric_limits<uint32_t>::max()) {
     return nullptr;
   } else {
-    return reinterpret_cast<TLSFBlockHeader *>(_block_start + offset);
+    return reinterpret_cast<BlockHeader *>(_block_start + offset);
   }
 }
 
 template<>
-void TLSFBase<TLSFZOptimizedConfig>::blk_set_next(TLSFBlockHeader *blk, TLSFBlockHeader *next) {
+void JSMallocBase<ZOptimizedConfig>::blk_set_next(BlockHeader *blk, BlockHeader *next) {
   uintptr_t offset = std::numeric_limits<uint32_t>::max();
 
   if(next != nullptr) {
@@ -477,7 +477,7 @@ void TLSFBase<TLSFZOptimizedConfig>::blk_set_next(TLSFBlockHeader *blk, TLSFBloc
 }
 
 template<>
-void TLSFBase<TLSFZOptimizedConfig>::blk_set_prev(TLSFBlockHeader *blk, TLSFBlockHeader *prev) {
+void JSMallocBase<ZOptimizedConfig>::blk_set_prev(BlockHeader *blk, BlockHeader *prev) {
   uintptr_t offset = std::numeric_limits<uint32_t>::max();
 
   if(prev != nullptr) {
@@ -488,46 +488,46 @@ void TLSFBase<TLSFZOptimizedConfig>::blk_set_prev(TLSFBlockHeader *blk, TLSFBloc
 }
 
 template <>
-TLSFMapping TLSFBase<TLSFZOptimizedConfig>::get_mapping(size_t size) {
-  int fl = TLSFUtil::ilog2(size);
+Mapping JSMallocBase<ZOptimizedConfig>::get_mapping(size_t size) {
+  int fl = JSMallocUtil::ilog2(size);
   int sl = size >> (fl - _sl_index_log2) ^ (1UL << _sl_index_log2);
   size_t mapping = ((fl - _min_alloc_size_log2) << _sl_index_log2) + sl;
   return {mapping > _num_lists ? _num_lists : mapping, 0};
 }
 
 template <>
-uint32_t TLSFBase<TLSFZOptimizedConfig>::flatten_mapping(TLSFMapping mapping) {
+uint32_t JSMallocBase<ZOptimizedConfig>::flatten_mapping(Mapping mapping) {
   return mapping.fl;
 }
 
 template <>
-TLSFMapping TLSFBase<TLSFZOptimizedConfig>::find_suitable_mapping(size_t aligned_size) {
+Mapping JSMallocBase<ZOptimizedConfig>::find_suitable_mapping(size_t aligned_size) {
   if(aligned_size > (1UL << (_fl_index + 4))) {
-    return {0, TLSFMapping::UNABLE_TO_FIND};
+    return {0, Mapping::UNABLE_TO_FIND};
   }
 
-  size_t target_size = aligned_size + (1UL << (TLSFUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
+  size_t target_size = aligned_size + (1UL << (JSMallocUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
 
   // With the mapping we search for a free block
-  TLSFMapping mapping = get_mapping(target_size);
+  Mapping mapping = get_mapping(target_size);
 
   // If the first-level index is out of bounds, the request cannot be fulfilled
   if(mapping.fl > _num_lists) {
-    return {0, TLSFMapping::UNABLE_TO_FIND};
+    return {0, Mapping::UNABLE_TO_FIND};
   }
 
   uint64_t above_mapping = _fl_bitmap & (~0UL << mapping.fl);
   if(above_mapping == 0) {
-    return {0, TLSFMapping::UNABLE_TO_FIND};
+    return {0, Mapping::UNABLE_TO_FIND};
   }
 
-  mapping.fl = TLSFUtil::ffs(above_mapping);
+  mapping.fl = JSMallocUtil::ffs(above_mapping);
 
   return mapping;
 }
 
 template <>
-void TLSFBase<TLSFZOptimizedConfig>::update_bitmap(TLSFMapping mapping, bool free_update) {
+void JSMallocBase<ZOptimizedConfig>::update_bitmap(Mapping mapping, bool free_update) {
   if(free_update) {
     _fl_bitmap |= (1UL << mapping.fl);
   } else {
@@ -535,12 +535,12 @@ void TLSFBase<TLSFZOptimizedConfig>::update_bitmap(TLSFMapping mapping, bool fre
   }
 }
 
-TLSF *TLSF::create(void *pool, size_t pool_size, bool start_full) {
-  TLSF *tlsf = reinterpret_cast<TLSF *>(pool);
-  return new(tlsf) TLSF(reinterpret_cast<void *>((uintptr_t)pool + sizeof(TLSF)), pool_size - sizeof(TLSF), start_full);
+JSMalloc *JSMalloc::create(void *pool, size_t pool_size, bool start_full) {
+  JSMalloc *jsmalloc = reinterpret_cast<JSMalloc *>(pool);
+  return new(jsmalloc) JSMalloc(reinterpret_cast<void *>((uintptr_t)pool + sizeof(JSMalloc)), pool_size - sizeof(JSMalloc), start_full);
 }
 
-void TLSF::free(void *ptr) {
+void JSMalloc::free(void *ptr) {
   if(ptr == nullptr) {
     return;
   }
@@ -549,10 +549,10 @@ void TLSF::free(void *ptr) {
     return;
   }
 
-  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)ptr - _block_header_length);
+  BlockHeader *blk = reinterpret_cast<BlockHeader *>((uintptr_t)ptr - _block_header_length);
 
-  TLSFBlockHeader *prev_blk = blk->prev_phys_block;
-  TLSFBlockHeader *next_blk = get_next_phys_block(blk);
+  BlockHeader *prev_blk = blk->prev_phys_block;
+  BlockHeader *next_blk = get_next_phys_block(blk);
 
   if(prev_blk != nullptr && prev_blk->is_free()) {
     blk = coalesce_blocks(prev_blk, blk);
@@ -565,17 +565,17 @@ void TLSF::free(void *ptr) {
   insert_block(blk);
 }
 
-size_t TLSF::get_allocated_size(void *address) {
-  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>((uintptr_t)address - _block_header_length);
+size_t JSMalloc::get_allocated_size(void *address) {
+  BlockHeader *blk = reinterpret_cast<BlockHeader *>((uintptr_t)address - _block_header_length);
   return blk->get_size();
 }
 
-ZPageOptimizedTLSF *ZPageOptimizedTLSF::create(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
-  ZPageOptimizedTLSF *tlsf = reinterpret_cast<ZPageOptimizedTLSF *>(pool);
-  return new(tlsf) ZPageOptimizedTLSF(reinterpret_cast<void *>((uintptr_t)pool + sizeof(ZPageOptimizedTLSF)), pool_size - sizeof(ZPageOptimizedTLSF), size_func, start_full);
+JSMallocZ *JSMallocZ::create(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
+  JSMallocZ *jsmallocz = reinterpret_cast<JSMallocZ *>(pool);
+  return new(jsmallocz) JSMallocZ(reinterpret_cast<void *>((uintptr_t)pool + sizeof(JSMallocZ)), pool_size - sizeof(JSMallocZ), size_func, start_full);
 }
 
-void ZPageOptimizedTLSF::free(void *ptr) {
+void JSMallocZ::free(void *ptr) {
   if(ptr == nullptr) {
     return;
   }
@@ -583,7 +583,7 @@ void ZPageOptimizedTLSF::free(void *ptr) {
   free(ptr, _size_func(ptr));
 }
 
-void ZPageOptimizedTLSF::free(void *ptr, size_t size) {
+void JSMallocZ::free(void *ptr, size_t size) {
   if(ptr == nullptr) {
     return;
   }
@@ -592,26 +592,26 @@ void ZPageOptimizedTLSF::free(void *ptr, size_t size) {
     return;
   }
 
-  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(ptr);
+  BlockHeader *blk = reinterpret_cast<BlockHeader *>(ptr);
   blk->size = size;
 
   insert_block(blk);
 }
 
-void ZPageOptimizedTLSF::free_range(void *start_ptr, size_t size) {
-  TLSFBlockHeader *blk = reinterpret_cast<TLSFBlockHeader *>(start_ptr);
+void JSMallocZ::free_range(void *start_ptr, size_t size) {
+  BlockHeader *blk = reinterpret_cast<BlockHeader *>(start_ptr);
   blk->size = size;
   insert_block(blk);
 }
 
-void ZPageOptimizedTLSF::aggregate() {
-  TLSFBlockHeader *current_blk = reinterpret_cast<TLSFBlockHeader *>(_block_start);
+void JSMallocZ::aggregate() {
+  BlockHeader *current_blk = reinterpret_cast<BlockHeader *>(_block_start);
 
   while(current_blk != nullptr) {
-    TLSFBlockHeader *next_blk = get_next_phys_block(current_blk);
+    BlockHeader *next_blk = get_next_phys_block(current_blk);
 
     if(next_blk != nullptr && current_blk->is_free() && next_blk->is_free()) {
-      current_blk = TLSFBase::coalesce_blocks(current_blk, next_blk);
+      current_blk = JSMallocBase::coalesce_blocks(current_blk, next_blk);
       insert_block(current_blk);
     } else {
       current_blk = next_blk;

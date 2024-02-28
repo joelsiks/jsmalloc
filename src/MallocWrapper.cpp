@@ -7,12 +7,12 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "TLSF.hpp"
+#include "JSMalloc.hpp"
 
 static const size_t MEMPOOL_SIZE = 1024 * 1000 * 2000;
 
 void *mempool = nullptr;
-static TLSF *tlsf_allocator = nullptr;
+static JSMalloc *jsmalloc = nullptr;
 static int log_file_fd = 0;
 
 extern "C" {
@@ -29,14 +29,14 @@ extern "C" {
     }
   }
 
-  void initialize_tlsf() {
+  void initialize_jsmalloc() {
     mempool = static_cast<void *>(mmap(nullptr, MEMPOOL_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
     if(mempool == MAP_FAILED) {
       perror("mmap failed");
       exit(1);
     }
 
-    tlsf_allocator = TLSF::create(mempool, MEMPOOL_SIZE);
+    jsmalloc = JSMalloc::create(mempool, MEMPOOL_SIZE);
 
     const char *log_file_name = getenv("LOG_ALLOC");
     if(log_file_name) {
@@ -45,8 +45,8 @@ extern "C" {
   }
 
   void *calloc(size_t nmemb, size_t size) {
-    if(tlsf_allocator == nullptr) {
-      initialize_tlsf();
+    if(jsmalloc == nullptr) {
+      initialize_jsmalloc();
     }
 
     void *ptr = malloc(nmemb * size);
@@ -58,15 +58,15 @@ extern "C" {
   }
 
   void *malloc(size_t size) {
-    if(tlsf_allocator == nullptr) {
-      initialize_tlsf();
+    if(jsmalloc == nullptr) {
+      initialize_jsmalloc();
     }
 
     if(log_file_fd != 0) {
       log_allocation_to_file(size);
     }
 
-    void *addr = tlsf_allocator->allocate(size);
+    void *addr = jsmalloc->allocate(size);
 
     if(addr == nullptr) {
       errno = ENOMEM;
@@ -76,16 +76,16 @@ extern "C" {
   }
 
   void free(void *addr) {
-    if(tlsf_allocator == nullptr) {
-      initialize_tlsf();
+    if(jsmalloc == nullptr) {
+      initialize_jsmalloc();
     }
 
-    tlsf_allocator->free(addr);
+    jsmalloc->free(addr);
   }
 
   void *realloc(void *ptr, size_t size) {
-    if(tlsf_allocator == nullptr) {
-      initialize_tlsf();
+    if(jsmalloc == nullptr) {
+      initialize_jsmalloc();
     }
 
     if(ptr == NULL) {
@@ -94,12 +94,12 @@ extern "C" {
       return nullptr;
     }
 
-    void *newalloc = tlsf_allocator->allocate(size);
+    void *newalloc = jsmalloc->allocate(size);
     if(newalloc == nullptr) {
       return nullptr;
     }
 
-    size_t old_size = tlsf_allocator->get_allocated_size(ptr);
+    size_t old_size = jsmalloc->get_allocated_size(ptr);
     size_t copy_size = old_size < size ? old_size : size;
 
     memcpy(newalloc, ptr, copy_size);

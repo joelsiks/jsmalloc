@@ -1,12 +1,12 @@
 
 // Author: Joel Sikström
 
-#ifndef TLSF_UTIL_HPP
-#define TLSF_UTIL_HPP
+#ifndef JSMALLOC_UTIL_HPP
+#define JSMALLOC_UTIL_HPP
 
 #include <cstdlib>
 
-class TLSFUtil {
+class JSMallocUtil {
 public:
   static bool is_aligned(size_t size, size_t alignment);
 
@@ -21,4 +21,4 @@ public:
   static size_t ilog2(size_t number);
 };
 
-#endif // TLSF_UTIL_HPP
+#endif // JSMALLOC_UTIL_HPP

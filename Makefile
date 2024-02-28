@@ -8,9 +8,9 @@ BUILD_DIR = build
 # Files
 SRC_FILES = $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_FILES = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(SRC_FILES))
-TEST_OBJ_FILES = $(filter-out $(BUILD_DIR)/TLSFMalloc.o, $(OBJ_FILES))
+TEST_OBJ_FILES = $(filter-out $(BUILD_DIR)/MallocWrapper.o, $(OBJ_FILES))
 LIB_OBJ_FILES = $(filter-out $(BUILD_DIR)/test.o, $(OBJ_FILES))
-SHARED_LIB = libtlsf.so
+SHARED_LIB = libjsmalloc.so
 
 # Targets
 all: prep $(LIB_OBJ_FILES)
