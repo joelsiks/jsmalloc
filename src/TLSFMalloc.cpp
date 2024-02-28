@@ -1,9 +1,11 @@
 
-#include <cstdio>
-#include <cstring>
-#include <cstdlib>
-#include <sys/mman.h>
 #include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include "TLSF.hpp"
 
@@ -11,8 +13,21 @@ static const size_t MEMPOOL_SIZE = 1024 * 1000 * 2000;
 
 void *mempool = nullptr;
 static TLSF *tlsf_allocator = nullptr;
+static int log_file_fd = 0;
 
 extern "C" {
+
+  void log_allocation_to_file(size_t size) {
+    const int max_len = 11;
+    char buffer[max_len];
+    int len = snprintf(buffer, max_len, "%lu\n", (unsigned long)size);
+
+    if(len >= 0 && len < max_len) {
+      if(write(log_file_fd, buffer, len) == -1) {
+        perror("failed to log");
+      }
+    }
+  }
 
   void initialize_tlsf() {
     mempool = static_cast<void *>(mmap(nullptr, MEMPOOL_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
@@ -22,6 +37,11 @@ extern "C" {
     }
 
     tlsf_allocator = TLSF::create(mempool, MEMPOOL_SIZE);
+
+    const char *log_file_name = getenv("LOG_ALLOC");
+    if(log_file_name) {
+      log_file_fd = creat(log_file_name, 0644);
+    }
   }
 
   void *calloc(size_t nmemb, size_t size) {
@@ -40,6 +60,10 @@ extern "C" {
   void *malloc(size_t size) {
     if(tlsf_allocator == nullptr) {
       initialize_tlsf();
+    }
+
+    if(log_file_fd != 0) {
+      log_allocation_to_file(size);
     }
 
     void *addr = tlsf_allocator->allocate(size);
