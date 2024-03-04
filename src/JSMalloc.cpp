@@ -167,8 +167,7 @@ void JSMallocBase<Config>::initialize(void *pool, size_t pool_size, bool start_f
   uintptr_t aligned_initial_block = JSMallocUtil::align_up((uintptr_t)pool, _alignment);
   _block_start = aligned_initial_block;
 
-  // The pool size is shrinked to the initial aligned block size. This wastes
-  // at maximum (_mbs - 1) bytes
+  // The pool size is shrinked to the initial aligned block size. This wastes at maximum (_mbs - 1) bytes
   size_t aligned_block_size = JSMallocUtil::align_down(pool_size - (aligned_initial_block - (uintptr_t)pool), _mbs);
   _pool_size = aligned_block_size;
 
@@ -180,6 +179,7 @@ void JSMallocBase<Config>::insert_block(BlockHeader *blk) {
   Mapping mapping = get_mapping(blk_get_size(blk));
   uint32_t flat_mapping = flatten_mapping(mapping);
 
+  _list_lock.lock();
   BlockHeader *head = _blocks[flat_mapping];
 
   // Insert the block into its corresponding free-list
@@ -195,22 +195,28 @@ void JSMallocBase<Config>::insert_block(BlockHeader *blk) {
   blk->mark_free();
 
   update_bitmap(mapping, true);
+  _list_lock.unlock();
 }
 
 template<typename Config>
 BlockHeader *JSMallocBase<Config>::find_block(size_t size) {
   size_t aligned_size = align_size(size);
-  Mapping mapping = find_suitable_mapping(aligned_size);
+  size_t target_size = aligned_size + (1UL << (JSMallocUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
 
-  if(mapping.sl == Mapping::UNABLE_TO_FIND) {
-    return nullptr;
+  Mapping mapping = get_mapping(target_size);
+
+  BlockHeader *blk = nullptr;
+  while(blk == nullptr) {
+    Mapping adjusted_mapping = adjust_available_mapping(mapping);
+
+    if(adjusted_mapping.sl == Mapping::UNABLE_TO_FIND) {
+      return nullptr;
+    }
+
+    blk = remove_block(nullptr, adjusted_mapping);
   }
 
-  // By now we now that we have an available block to use
-  BlockHeader *blk = remove_block(nullptr, mapping);
-
-  // If the block is larger than some threshold relative to the requested size
-  // it should be split up to minimize internal fragmentation
+  // If the block can be split, we split it in order to minimize internal fragmentation
   if((blk->get_size() - aligned_size) >= (_mbs + _block_header_length)) {
     BlockHeader *remainder_blk = split_block(blk, aligned_size);
     insert_block(remainder_blk);
@@ -247,33 +253,41 @@ template<typename Config>
 BlockHeader *JSMallocBase<Config>::remove_block(BlockHeader *blk, Mapping mapping) {
   uint32_t flat_mapping = flatten_mapping(mapping);
   BlockHeader *target = blk;
+  BlockHeader *next_blk, *prev_blk;
 
-  if(blk == nullptr) {
-    target = _blocks[flat_mapping];
-  }
+  {
+    std::lock_guard<std::mutex> lock(_list_lock);
 
-  assert(target != nullptr);
+    if(blk == nullptr) {
+      target = _blocks[flat_mapping];
+    }
 
-  if(blk_get_next(target) != nullptr) {
-    blk_set_prev(blk_get_next(target), blk_get_prev(target));
-  }
+    if(target == nullptr) {
+      return nullptr;
+    }
 
-  if(blk_get_prev(target) != nullptr) {
-    blk_set_next(blk_get_prev(target), blk_get_next(target));
+    next_blk = blk_get_next(target);
+    prev_blk = blk_get_prev(target);
+
+    // If the block is the head in the free-list, we need to update the head
+    if(_blocks[flat_mapping] == target) {
+      _blocks[flat_mapping] = next_blk;
+    }
+
+    if(next_blk != nullptr) {
+      blk_set_prev(next_blk, prev_blk);
+    } else {
+      // If the block is the last one in the free-list, we mark it as empty
+      update_bitmap(mapping, false);
+    }
+
+    if(prev_blk != nullptr) {
+      blk_set_next(prev_blk, next_blk);
+    }
   }
 
   // Mark the block as used (no longer free)
   target->mark_used();
-
-  // If the block is the head in the free-list, we need to update the head
-  if(_blocks[flat_mapping] == target) {
-    _blocks[flat_mapping] = blk_get_next(target);
-  }
-
-  // If the block is the last one in the free-list, we mark it as empty
-  if(blk_get_next(target) == nullptr) {
-    update_bitmap(mapping, false);
-  }
 
   return target;
 }
@@ -389,12 +403,7 @@ uint32_t JSMallocBase<BaseConfig>::flatten_mapping(Mapping mapping) {
 }
 
 template <>
-Mapping JSMallocBase<BaseConfig>::find_suitable_mapping(size_t aligned_size) {
-  size_t target_size = aligned_size + (1UL << (JSMallocUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
-
-  // With the mapping we search for a free block
-  Mapping mapping = get_mapping(target_size);
-
+Mapping JSMallocBase<BaseConfig>::adjust_available_mapping(Mapping mapping) {
   // If the first-level index is out of bounds, the request cannot be fulfilled
   if(mapping.fl >= _fl_index) {
     return {0, Mapping::UNABLE_TO_FIND};
@@ -501,16 +510,7 @@ uint32_t JSMallocBase<ZOptimizedConfig>::flatten_mapping(Mapping mapping) {
 }
 
 template <>
-Mapping JSMallocBase<ZOptimizedConfig>::find_suitable_mapping(size_t aligned_size) {
-  if(aligned_size > (1UL << (_fl_index + 4))) {
-    return {0, Mapping::UNABLE_TO_FIND};
-  }
-
-  size_t target_size = aligned_size + (1UL << (JSMallocUtil::ilog2(aligned_size) - _sl_index_log2)) - 1;
-
-  // With the mapping we search for a free block
-  Mapping mapping = get_mapping(target_size);
-
+Mapping JSMallocBase<ZOptimizedConfig>::adjust_available_mapping(Mapping mapping) {
   // If the first-level index is out of bounds, the request cannot be fulfilled
   if(mapping.fl > _num_lists) {
     return {0, Mapping::UNABLE_TO_FIND};

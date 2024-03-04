@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <mutex>
 
 class BlockHeader {
 private:
@@ -81,6 +82,8 @@ protected:
   // We add an extra list for the optimized "large-list".
   BlockHeader* _blocks[_num_lists + 1];
 
+  std::mutex _list_lock;
+
   void initialize(void *pool, size_t pool_size, bool start_full);
 
   void insert_block(BlockHeader *blk);
@@ -115,7 +118,7 @@ protected:
 
   Mapping get_mapping(size_t size);
   uint32_t flatten_mapping(Mapping mapping);
-  Mapping find_suitable_mapping(size_t target_size);
+  Mapping adjust_available_mapping(Mapping mapping);
   void update_bitmap(Mapping mapping, bool free_update);
 };
 

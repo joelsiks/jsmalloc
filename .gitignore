@@ -1,4 +1,5 @@
 .vscode
+benchmark
 build
 test
 *.o
@@ -6,3 +7,5 @@ test
 *.out
 *.lib
 *.a
+
+distributions/
