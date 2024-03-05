@@ -5,8 +5,36 @@
 #define JSMALLOC_UTIL_INLINE_HPP
 
 #include <climits>
+#include <limits>
 
 #include "JSMallocUtil.hpp"
+
+inline uint32_t JSMallocUtil::get_bits(uint64_t value, bool lower) {
+  return lower ? value & 0xFFFFFFFF : value >> 32;
+}
+
+inline void *JSMallocUtil::from_offset(uintptr_t base, bool lower, uint64_t value) {
+  uint32_t offset = static_cast<uint32_t>(get_bits(value, lower));
+
+  if(offset == std::numeric_limits<uint32_t>::max()) {
+    return nullptr;
+  } else {
+    return reinterpret_cast<void *>(base + offset);
+  }
+}
+
+inline void JSMallocUtil::set_offset(bool lower, uint32_t offset, uint64_t *value) {
+  if(lower) {
+    *value = (*value & 0xFFFFFFFF00000000) | offset;
+  } else {
+    uint64_t offset_large = static_cast<uint64_t>(offset);
+    *value = (offset_large << 32) | (*value & 0xFFFFFFFF);
+  }
+}
+
+inline uint64_t JSMallocUtil::combine_halfwords(uint32_t upper, uint32_t lower) {
+  return (static_cast<uint64_t>(upper) << 32) | lower;
+}
 
 inline bool JSMallocUtil::is_aligned(size_t size, size_t alignment) {
   return (size & (alignment - 1)) == 0;
