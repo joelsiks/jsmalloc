@@ -4,6 +4,7 @@
 #ifndef JSMALLOC_HPP
 #define JSMALLOC_HPP
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -76,11 +77,11 @@ protected:
   uintptr_t _block_start;
   size_t _pool_size;
 
-  uint64_t _fl_bitmap;
+  std::atomic<uint64_t> _fl_bitmap;
   uint32_t _sl_bitmap[Config::UseSecondLevels ? _fl_index : 0];
 
   // We add an extra list for the optimized "large-list".
-  BlockHeader* _blocks[_num_lists + 1];
+  std::atomic<BlockHeader*> _blocks[_num_lists + 1];
 
   std::mutex _list_lock;
 

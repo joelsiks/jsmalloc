@@ -152,6 +152,8 @@ void JSMallocBase<Config>::print_free_lists() {
     } else {
       printf("FREE-LIST (%02ld): ", i);
       BlockHeader *current = _blocks[i];
+      current = reinterpret_cast<BlockHeader *>(JSMallocUtil::from_offset(_block_start, false, reinterpret_cast<uint64_t>(_blocks[i].load())));
+
       while(current != nullptr) {
         std::cout << current << " -> ";
         current = blk_get_next(current);
@@ -180,6 +182,7 @@ void JSMallocBase<Config>::insert_block(BlockHeader *blk) {
   uint32_t flat_mapping = flatten_mapping(mapping);
 
   _list_lock.lock();
+
   BlockHeader *head = _blocks[flat_mapping];
 
   // Insert the block into its corresponding free-list
@@ -195,6 +198,7 @@ void JSMallocBase<Config>::insert_block(BlockHeader *blk) {
   blk->mark_free();
 
   update_bitmap(mapping, true);
+
   _list_lock.unlock();
 }
 
@@ -255,36 +259,37 @@ BlockHeader *JSMallocBase<Config>::remove_block(BlockHeader *blk, Mapping mappin
   BlockHeader *target = blk;
   BlockHeader *next_blk, *prev_blk;
 
-  {
-    std::lock_guard<std::mutex> lock(_list_lock);
+  _list_lock.lock();
 
-    if(blk == nullptr) {
-      target = _blocks[flat_mapping];
-    }
-
-    if(target == nullptr) {
-      return nullptr;
-    }
-
-    next_blk = blk_get_next(target);
-    prev_blk = blk_get_prev(target);
-
-    // If the block is the head in the free-list, we need to update the head
-    if(_blocks[flat_mapping] == target) {
-      _blocks[flat_mapping] = next_blk;
-    }
-
-    if(next_blk != nullptr) {
-      blk_set_prev(next_blk, prev_blk);
-    } else {
-      // If the block is the last one in the free-list, we mark it as empty
-      update_bitmap(mapping, false);
-    }
-
-    if(prev_blk != nullptr) {
-      blk_set_next(prev_blk, next_blk);
-    }
+  if(blk == nullptr) {
+    target = _blocks[flat_mapping];
   }
+
+  if(target == nullptr) {
+    _list_lock.unlock();
+    return nullptr;
+  }
+
+  next_blk = blk_get_next(target);
+  prev_blk = blk_get_prev(target);
+
+  // If the block is the head in the free-list, we need to update the head
+  if(_blocks[flat_mapping] == target) {
+    _blocks[flat_mapping] = next_blk;
+  }
+
+  if(next_blk != nullptr) {
+    blk_set_prev(next_blk, prev_blk);
+  } else {
+    // If the block is the last one in the free-list, we mark it as empty
+    update_bitmap(mapping, false);
+  }
+
+  if(prev_blk != nullptr) {
+    blk_set_next(prev_blk, next_blk);
+  }
+
+  _list_lock.unlock();
 
   // Mark the block as used (no longer free)
   target->mark_used();
@@ -441,6 +446,41 @@ void JSMallocBase<BaseConfig>::update_bitmap(Mapping mapping, bool free_update) 
   }
 }
 
+JSMalloc *JSMalloc::create(void *pool, size_t pool_size, bool start_full) {
+  JSMalloc *jsmalloc = reinterpret_cast<JSMalloc *>(pool);
+  return new(jsmalloc) JSMalloc(reinterpret_cast<void *>((uintptr_t)pool + sizeof(JSMalloc)), pool_size - sizeof(JSMalloc), start_full);
+}
+
+void JSMalloc::free(void *ptr) {
+  if(ptr == nullptr) {
+    return;
+  }
+
+  if(!ptr_in_pool((uintptr_t)ptr)) {
+    return;
+  }
+
+  BlockHeader *blk = reinterpret_cast<BlockHeader *>((uintptr_t)ptr - _block_header_length);
+
+  BlockHeader *prev_blk = blk->prev_phys_block;
+  BlockHeader *next_blk = get_next_phys_block(blk);
+
+  if(prev_blk != nullptr && prev_blk->is_free()) {
+    blk = coalesce_blocks(prev_blk, blk);
+  }
+
+  if(next_blk != nullptr && next_blk->is_free()) {
+    blk = coalesce_blocks(blk, next_blk);
+  }
+
+  insert_block(blk);
+}
+
+size_t JSMalloc::get_allocated_size(void *address) {
+  BlockHeader *blk = reinterpret_cast<BlockHeader *>((uintptr_t)address - _block_header_length);
+  return blk->get_size();
+}
+
 template<>
 size_t JSMallocBase<ZOptimizedConfig>::blk_get_size(BlockHeader *blk) {
   size_t size = _size_func(reinterpret_cast<void *>(blk));
@@ -452,48 +492,28 @@ size_t JSMallocBase<ZOptimizedConfig>::blk_get_size(BlockHeader *blk) {
   }
 }
 
+static uint32_t calculate_offset(BlockHeader *blk, uintptr_t start) {
+  return (blk == nullptr) ? std::numeric_limits<uint32_t>::max() : reinterpret_cast<uintptr_t>(blk) - start;
+}
+
 template<>
 BlockHeader *JSMallocBase<ZOptimizedConfig>::blk_get_next(BlockHeader *blk) {
-  uintptr_t offset = static_cast<uint32_t>(blk->f1 >> 32);
-
-  if(offset == std::numeric_limits<uint32_t>::max()) {
-    return nullptr;
-  } else {
-    return reinterpret_cast<BlockHeader *>(_block_start + offset);
-  }
+  return reinterpret_cast<BlockHeader *>(JSMallocUtil::from_offset(_block_start, true, blk->f1));
 }
 
 template<>
 BlockHeader *JSMallocBase<ZOptimizedConfig>::blk_get_prev(BlockHeader *blk) {
-  uintptr_t offset = static_cast<uint32_t>(blk->f1 & 0xFFFFFFFF);
-
-  if(offset == std::numeric_limits<uint32_t>::max()) {
-    return nullptr;
-  } else {
-    return reinterpret_cast<BlockHeader *>(_block_start + offset);
-  }
+  return reinterpret_cast<BlockHeader *>(JSMallocUtil::from_offset(_block_start, false, blk->f1));
 }
 
 template<>
 void JSMallocBase<ZOptimizedConfig>::blk_set_next(BlockHeader *blk, BlockHeader *next) {
-  uintptr_t offset = std::numeric_limits<uint32_t>::max();
-
-  if(next != nullptr) {
-    offset = reinterpret_cast<uintptr_t>(next) - reinterpret_cast<uintptr_t>(_block_start);
-  }
-    
-  blk->f1 = (static_cast<uint64_t>(offset) << 32) | (blk->f1 & 0xFFFFFFFF);
+  JSMallocUtil::set_offset(true, calculate_offset(next, _block_start), &blk->f1);
 }
 
 template<>
 void JSMallocBase<ZOptimizedConfig>::blk_set_prev(BlockHeader *blk, BlockHeader *prev) {
-  uintptr_t offset = std::numeric_limits<uint32_t>::max();
-
-  if(prev != nullptr) {
-    offset = reinterpret_cast<uintptr_t>(prev) - reinterpret_cast<uintptr_t>(_block_start);
-  }
-
-  blk->f1 = (blk->f1 & 0xFFFFFFFF00000000) | (static_cast<uint32_t>(offset) & 0xFFFFFFFF);
+  JSMallocUtil::set_offset(false, calculate_offset(prev, _block_start), &blk->f1);
 }
 
 template <>
@@ -535,39 +555,70 @@ void JSMallocBase<ZOptimizedConfig>::update_bitmap(Mapping mapping, bool free_up
   }
 }
 
-JSMalloc *JSMalloc::create(void *pool, size_t pool_size, bool start_full) {
-  JSMalloc *jsmalloc = reinterpret_cast<JSMalloc *>(pool);
-  return new(jsmalloc) JSMalloc(reinterpret_cast<void *>((uintptr_t)pool + sizeof(JSMalloc)), pool_size - sizeof(JSMalloc), start_full);
+template<>
+void JSMallocBase<ZOptimizedConfig>::insert_block(BlockHeader *blk) {
+  Mapping mapping = get_mapping(blk_get_size(blk));
+  uint32_t flat_mapping = flatten_mapping(mapping);
+  BlockHeader *head, *new_head;
+
+  // Mark the block as free
+  blk->mark_free();
+
+  do {
+    head = _blocks[flat_mapping].load();
+    BlockHeader *offset = head;
+
+    if(head == nullptr) {
+      offset = reinterpret_cast<BlockHeader *>(std::numeric_limits<uint64_t>::max());
+    }
+
+    blk_set_next(blk, reinterpret_cast<BlockHeader *>(JSMallocUtil::from_offset(_block_start, false, reinterpret_cast<uint64_t>(offset))));
+
+    uint64_t version = 1;
+    new_head = reinterpret_cast<BlockHeader *>(version);
+    JSMallocUtil::set_offset(false, calculate_offset(blk, _block_start), reinterpret_cast<uint64_t *>(&new_head));
+  } while(!_blocks[flat_mapping].compare_exchange_strong(head, new_head));
+
+  // Update bitmap to indicate level has a free block
+  _fl_bitmap.fetch_or(1UL << mapping.fl);
 }
 
-void JSMalloc::free(void *ptr) {
-  if(ptr == nullptr) {
-    return;
+template<>
+BlockHeader *JSMallocBase<ZOptimizedConfig>::remove_block(BlockHeader *target_blk, Mapping mapping) {
+  // blk should always be nullptr for the optimized allocator since we only
+  // allow removing the head of the free-list, not a block in the middle
+  (void)target_blk;
+
+  uint32_t flat_mapping = flatten_mapping(mapping);
+  BlockHeader *head = _blocks[flat_mapping].load();
+  if(head == nullptr) {
+    return nullptr;
   }
 
-  if(!ptr_in_pool((uintptr_t)ptr)) {
-    return;
+  uint64_t head_bits = reinterpret_cast<uint64_t>(head);
+
+  uint32_t version = JSMallocUtil::get_bits(head_bits, true);
+  BlockHeader *actual_head = reinterpret_cast<BlockHeader *>(JSMallocUtil::from_offset(_block_start, false, head_bits));
+
+  BlockHeader *next_blk = (actual_head == nullptr)
+    ? nullptr
+    : blk_get_next(actual_head);
+
+  BlockHeader *new_head = reinterpret_cast<BlockHeader *>(version + 1);
+  JSMallocUtil::set_offset(false, calculate_offset(next_blk, _block_start), reinterpret_cast<uint64_t *>(&new_head));
+
+  if(!_blocks[flat_mapping].compare_exchange_strong(head, new_head)) {
+    return nullptr;
   }
 
-  BlockHeader *blk = reinterpret_cast<BlockHeader *>((uintptr_t)ptr - _block_header_length);
-
-  BlockHeader *prev_blk = blk->prev_phys_block;
-  BlockHeader *next_blk = get_next_phys_block(blk);
-
-  if(prev_blk != nullptr && prev_blk->is_free()) {
-    blk = coalesce_blocks(prev_blk, blk);
+  if(next_blk == nullptr) {
+    _fl_bitmap.fetch_and(~(1UL << mapping.fl));
   }
 
-  if(next_blk != nullptr && next_blk->is_free()) {
-    blk = coalesce_blocks(blk, next_blk);
-  }
+  // Mark the block as used (no longer free)
+  //actual_head->mark_used();
 
-  insert_block(blk);
-}
-
-size_t JSMalloc::get_allocated_size(void *address) {
-  BlockHeader *blk = reinterpret_cast<BlockHeader *>((uintptr_t)address - _block_header_length);
-  return blk->get_size();
+  return actual_head;
 }
 
 JSMallocZ *JSMallocZ::create(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
@@ -618,4 +669,3 @@ void JSMallocZ::aggregate() {
     }
   }
 }
-

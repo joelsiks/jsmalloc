@@ -21,15 +21,15 @@ const size_t max_allocs = -1;
 const bool should_free = true;
 const std::string filename = "distributions/dacapo_h2_1.txt";
 
-std::array<std::vector<void *>, n_threads> allocations;
+std::array<std::vector<std::pair<void *, size_t>>, n_threads> allocations;
 
 uint8_t *mmap_allocate(size_t pool_size) {
   return static_cast<uint8_t *>(mmap(nullptr, pool_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 }
 
-void allocate_run(JSMalloc &allocator, std::vector<size_t> &allocation_sizes, int i) {
+void allocate_run(JSMallocZ &allocator, std::vector<size_t> &allocation_sizes, int i) {
   size_t num_allocations = 0;
-  for (const auto &size : allocation_sizes) {
+  for (size_t size : allocation_sizes) {
     if (num_allocations++ >= max_allocs) {
       break;
     }
@@ -37,7 +37,7 @@ void allocate_run(JSMalloc &allocator, std::vector<size_t> &allocation_sizes, in
     void *p = allocator.allocate(size);
 
     if (should_free) {
-      allocations[i].push_back(p);
+      allocations[i].push_back(std::make_pair(p, size));
     }
   }
 }
@@ -65,10 +65,15 @@ void process_file(const std::string &filename, std::vector<size_t> &allocation_s
   file.close();
 }
 
+size_t alloc_size(void *address) {
+  (void)address;
+  return 0;
+}
+
 int main() {
   size_t pool_size = 10 * 1000 * 1024;
   void *pool = mmap_allocate(pool_size);
-  JSMalloc allocator(pool, pool_size);
+  JSMallocZ allocator(pool, pool_size, alloc_size, false);
 
   std::vector<std::thread> threads(n_threads);
 
@@ -92,7 +97,7 @@ int main() {
     if (should_free) {
       for (auto &vec : allocations) {
         for (const auto &p : vec) {
-          allocator.free(p);
+          allocator.free(p.first, p.second);
         }
         vec.clear();
       }

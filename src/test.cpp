@@ -199,13 +199,13 @@ void zero_test() {
 }
 
 int main() {
-  //basic_test();
-  //constructor_test();
+  basic_test();
+  constructor_test();
   free_range_test();
-  //deferred_coalescing_test();
-  //CUnit_initialize_test();
-  //optimized_test();
-  //benchmark_comparison_untimed();
-  //benchmark_comparison();
-  //zero_test();
+  deferred_coalescing_test();
+  CUnit_initialize_test();
+  optimized_test();
+  benchmark_comparison_untimed();
+  benchmark_comparison();
+  zero_test();
 }
