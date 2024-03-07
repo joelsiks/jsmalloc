@@ -65,15 +65,10 @@ void process_file(const std::string &filename, std::vector<size_t> &allocation_s
   file.close();
 }
 
-size_t alloc_size(void *address) {
-  (void)address;
-  return 0;
-}
-
 int main() {
   size_t pool_size = 10 * 1000 * 1024;
   void *pool = mmap_allocate(pool_size);
-  JSMallocZ allocator(pool, pool_size, alloc_size, false);
+  JSMallocZ allocator(pool, pool_size, false);
 
   std::vector<std::thread> threads(n_threads);
 

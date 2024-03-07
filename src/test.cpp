@@ -62,7 +62,7 @@ void free_range_test() {
   const size_t pool_size = 128;
   uint8_t *pool = mmap_allocate(pool_size);
 
-  JSMallocZ t(pool, pool_size, size_mapping, true);
+  JSMallocZ t(pool, pool_size, true);
   t.print_phys_blks();
   std::cout << "---------------\n";
 
@@ -80,7 +80,7 @@ void free_range_test() {
 void deferred_coalescing_test() {
   const size_t pool_size = 16 * 16 + 8;
   uint8_t *pool = mmap_allocate(pool_size);
-  JSMallocZ t(pool, pool_size, size_mapping, false);
+  JSMallocZ t(pool, pool_size, false);
 
   void *obj1 = t.allocate(1);
   memset(obj1, 0, 16);
@@ -136,7 +136,7 @@ void CUnit_initialize_test() {
 void optimized_test() {
   size_t pool_size = 1024;
   uint8_t *pool = mmap_allocate(pool_size);
-  JSMallocZ t(pool, pool_size, size_mapping, false);
+  JSMallocZ t(pool, pool_size, false);
 
   int *arr = (int *)t.allocate(128);
   size_map[arr] = 128;
@@ -156,7 +156,7 @@ void benchmark_comparison_untimed() {
   }
 
   uint8_t *pool2 = mmap_allocate(pool_size);
-  JSMallocZ zalloc(pool2, pool_size, size_mapping, false);
+  JSMallocZ zalloc(pool2, pool_size, false);
 
   for(int i = 0; i < 400000; i++) {
     void *a = zalloc.allocate(32);
@@ -178,7 +178,7 @@ void benchmark_comparison() {
   std::cout << "General " << duration.count() << std::endl;;
 
   uint8_t *pool2 = mmap_allocate(pool_size);
-  JSMallocZ zalloc(pool2, pool_size, size_mapping, false);
+  JSMallocZ zalloc(pool2, pool_size, false);
 
   start_time = std::chrono::high_resolution_clock::now();
   a = zalloc.allocate(32);

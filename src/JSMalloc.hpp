@@ -39,16 +39,10 @@ struct Mapping;
 constexpr size_t BLOCK_HEADER_LENGTH_SMALL = 0;
 constexpr size_t BLOCK_HEADER_LENGTH = sizeof(BlockHeader);
 
-typedef size_t(* allocation_size_func)(void *address);
-
-static size_t default_allocation_size(void *address) {
-  return reinterpret_cast<BlockHeader *>((uintptr_t)address - BLOCK_HEADER_LENGTH)->size;
-}
-
 template <typename Config>
 class JSMallocBase {
 public:
-  JSMallocBase(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full);
+  JSMallocBase(void *pool, size_t pool_size, bool start_full);
 
   void reset(bool initial_block_allocated = true);
   void *allocate(size_t size);
@@ -71,8 +65,6 @@ protected:
   static const size_t _num_lists = _fl_index * _sl_index;
   static const size_t _mbs = Config::MBS;
   static const size_t _block_header_length = Config::BlockHeaderLength;
-
-  allocation_size_func _size_func;
 
   uintptr_t _block_start;
   size_t _pool_size;
@@ -111,7 +103,6 @@ protected:
   size_t align_size(size_t size);
 
   // The following methods are calculated differently depending on the configuration.
-  inline size_t blk_get_size(BlockHeader *blk);
   inline BlockHeader *blk_get_next(BlockHeader *blk);
   inline BlockHeader *blk_get_prev(BlockHeader *blk);
   inline void blk_set_next(BlockHeader *blk, BlockHeader *next);
@@ -146,7 +137,7 @@ public:
 class JSMalloc : public JSMallocBase<BaseConfig> {
 public:
   JSMalloc(void *pool, size_t pool_size, bool start_full = false)
-    : JSMallocBase(pool, pool_size, default_allocation_size, start_full) {}
+    : JSMallocBase(pool, pool_size, start_full) {}
 
   static JSMalloc *create(void *pool, size_t pool_size, bool start_full = false);
 
@@ -157,12 +148,11 @@ public:
 
 class JSMallocZ : public JSMallocBase<ZOptimizedConfig> {
 public:
-  JSMallocZ(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full)
-    : JSMallocBase(pool, pool_size, size_func, start_full) {}
+  JSMallocZ(void *pool, size_t pool_size, bool start_full)
+    : JSMallocBase(pool, pool_size, start_full) {}
 
-  static JSMallocZ *create(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full);
+  static JSMallocZ *create(void *pool, size_t pool_size, bool start_full);
 
-  void free(void *ptr);
   void free(void *ptr, size_t size);
 
   // This assumes that the range that is described by (address -> (address + range))

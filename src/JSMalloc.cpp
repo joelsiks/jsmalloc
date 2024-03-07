@@ -48,8 +48,7 @@ void BlockHeader::unmark_last() {
 }
 
 template<typename Config>
-JSMallocBase<Config>::JSMallocBase(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
-  _size_func = size_func;
+JSMallocBase<Config>::JSMallocBase(void *pool, size_t pool_size, bool start_full) {
   initialize(pool, pool_size, start_full);
 }
 
@@ -103,7 +102,7 @@ void *JSMallocBase<Config>::allocate(size_t size) {
 template<typename Config>
 void JSMallocBase<Config>::print_blk(BlockHeader *blk) {
   std::cout << "Block (@ " << blk << ")\n" 
-            << " size=" << blk_get_size(blk) << "\n"
+            << " size=" << blk->get_size() << "\n"
             << " LF=" << (blk->is_last() ? "1" : "0") << (blk->is_free() ? "1" : "0") << " (not accurate)\n";
 
   if(!Config::DeferredCoalescing) {
@@ -178,7 +177,7 @@ void JSMallocBase<Config>::initialize(void *pool, size_t pool_size, bool start_f
 
 template<typename Config>
 void JSMallocBase<Config>::insert_block(BlockHeader *blk) {
-  Mapping mapping = get_mapping(blk_get_size(blk));
+  Mapping mapping = get_mapping(blk->get_size());
   uint32_t flat_mapping = flatten_mapping(mapping);
 
   _list_lock.lock();
@@ -299,7 +298,7 @@ BlockHeader *JSMallocBase<Config>::remove_block(BlockHeader *blk, Mapping mappin
 
 template<typename Config>
 BlockHeader *JSMallocBase<Config>::split_block(BlockHeader *blk, size_t size) {
-  size_t remainder_size = blk_get_size(blk) - _block_header_length - size;
+  size_t remainder_size = blk->get_size() - _block_header_length - size;
 
   // Needs to be checked before setting new size
   bool is_last = blk->is_last();
@@ -308,7 +307,7 @@ BlockHeader *JSMallocBase<Config>::split_block(BlockHeader *blk, size_t size) {
   blk->size = size;
 
   // Use a portion of blk's memory for the new block
-  BlockHeader *remainder_blk = reinterpret_cast<BlockHeader *>((uintptr_t)blk + _block_header_length + blk_get_size(blk));
+  BlockHeader *remainder_blk = reinterpret_cast<BlockHeader *>((uintptr_t)blk + _block_header_length + blk->get_size());
   remainder_blk->size = remainder_size;
   if(!Config::DeferredCoalescing) {
     remainder_blk->prev_phys_block = blk;
@@ -331,7 +330,7 @@ BlockHeader *JSMallocBase<Config>::get_next_phys_block(BlockHeader *blk) {
     return nullptr;
   }
 
-  uintptr_t next = (uintptr_t)blk + _block_header_length + blk_get_size(blk);
+  uintptr_t next = (uintptr_t)blk + _block_header_length + blk->get_size();
   return ptr_in_pool(next)
     ? (BlockHeader *)next
     : nullptr;
@@ -368,11 +367,6 @@ size_t JSMallocBase<Config>::align_size(size_t size) {
   }
 
   return JSMallocUtil::align_up(size, _mbs);
-}
-
-template<>
-size_t JSMallocBase<BaseConfig>::blk_get_size(BlockHeader *blk) {
-  return blk->get_size();
 }
 
 template<>
@@ -481,17 +475,6 @@ size_t JSMalloc::get_allocated_size(void *address) {
   return blk->get_size();
 }
 
-template<>
-size_t JSMallocBase<ZOptimizedConfig>::blk_get_size(BlockHeader *blk) {
-  size_t size = _size_func(reinterpret_cast<void *>(blk));
-
-  if(size == 0) {
-    return blk->get_size();
-  } else {
-    return size;
-  }
-}
-
 static uint32_t calculate_offset(BlockHeader *blk, uintptr_t start) {
   return (blk == nullptr) ? std::numeric_limits<uint32_t>::max() : reinterpret_cast<uintptr_t>(blk) - start;
 }
@@ -557,7 +540,7 @@ void JSMallocBase<ZOptimizedConfig>::update_bitmap(Mapping mapping, bool free_up
 
 template<>
 void JSMallocBase<ZOptimizedConfig>::insert_block(BlockHeader *blk) {
-  Mapping mapping = get_mapping(blk_get_size(blk));
+  Mapping mapping = get_mapping(blk->get_size());
   uint32_t flat_mapping = flatten_mapping(mapping);
   BlockHeader *head, *new_head;
 
@@ -596,7 +579,6 @@ BlockHeader *JSMallocBase<ZOptimizedConfig>::remove_block(BlockHeader *target_bl
   }
 
   uint64_t head_bits = reinterpret_cast<uint64_t>(head);
-
   uint32_t version = JSMallocUtil::get_bits(head_bits, true);
   BlockHeader *actual_head = reinterpret_cast<BlockHeader *>(JSMallocUtil::from_offset(_block_start, false, head_bits));
 
@@ -615,23 +597,12 @@ BlockHeader *JSMallocBase<ZOptimizedConfig>::remove_block(BlockHeader *target_bl
     _fl_bitmap.fetch_and(~(1UL << mapping.fl));
   }
 
-  // Mark the block as used (no longer free)
-  //actual_head->mark_used();
-
   return actual_head;
 }
 
-JSMallocZ *JSMallocZ::create(void *pool, size_t pool_size, allocation_size_func size_func, bool start_full) {
+JSMallocZ *JSMallocZ::create(void *pool, size_t pool_size, bool start_full) {
   JSMallocZ *jsmallocz = reinterpret_cast<JSMallocZ *>(pool);
-  return new(jsmallocz) JSMallocZ(reinterpret_cast<void *>((uintptr_t)pool + sizeof(JSMallocZ)), pool_size - sizeof(JSMallocZ), size_func, start_full);
-}
-
-void JSMallocZ::free(void *ptr) {
-  if(ptr == nullptr) {
-    return;
-  }
-
-  free(ptr, _size_func(ptr));
+  return new(jsmallocz) JSMallocZ(reinterpret_cast<void *>((uintptr_t)pool + sizeof(JSMallocZ)), pool_size - sizeof(JSMallocZ), start_full);
 }
 
 void JSMallocZ::free(void *ptr, size_t size) {
@@ -645,14 +616,11 @@ void JSMallocZ::free(void *ptr, size_t size) {
 
   BlockHeader *blk = reinterpret_cast<BlockHeader *>(ptr);
   blk->size = size;
-
   insert_block(blk);
 }
 
 void JSMallocZ::free_range(void *start_ptr, size_t size) {
-  BlockHeader *blk = reinterpret_cast<BlockHeader *>(start_ptr);
-  blk->size = size;
-  insert_block(blk);
+  free(start_ptr, size);
 }
 
 void JSMallocZ::aggregate() {
