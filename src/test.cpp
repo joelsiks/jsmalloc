@@ -7,6 +7,8 @@
 #include <cstring>
 #include <sys/mman.h>
 
+#include <x86intrin.h>
+
 #include <map>
 
 #include "JSMalloc.hpp"
@@ -198,6 +200,21 @@ void zero_test() {
   std::cout << "Got: " << addr << std::endl;
 }
 
+void rdtsc_test() {
+  size_t pool_size = 1024 * 10000;
+  uint8_t *pool = mmap_allocate(pool_size);
+  JSMallocZ alloc(pool, pool_size, false);
+
+  int iters = 100;
+  uint64_t start = 0, avg = 0;
+  for(int i = 0; i < iters; i++) {
+    start = __rdtsc();
+    void *addr = alloc.allocate(131072);
+    avg += __rdtsc() - start;
+  }
+  std::cout << "allocate(0) cycles: " << avg / iters << std::endl;
+}
+
 int main() {
   basic_test();
   constructor_test();
@@ -208,4 +225,5 @@ int main() {
   benchmark_comparison_untimed();
   benchmark_comparison();
   zero_test();
+  rdtsc_test();
 }

@@ -92,11 +92,21 @@ void *JSMallocBase<Config>::allocate(size_t size) {
     return nullptr;
   } 
 
+  size_t allocated_size = blk->get_size();
+
+  _internal_fragmentation = allocated_size - size;
+  _allocated += allocated_size;
+
   // Make sure addresses are aligned to the word-size (8-bytes).
   // TODO: This might not be necessary if everything is already aligned, and
   // should take into account that the block size might be smaller than expected.
   uintptr_t blk_start = (uintptr_t)blk + _block_header_length;
   return (void *)blk_start;
+}
+
+template<typename Config>
+double JSMallocBase<Config>::internal_fragmentation() {
+  return (double)_internal_fragmentation / _allocated;
 }
 
 template<typename Config>

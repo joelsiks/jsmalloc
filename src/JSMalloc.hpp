@@ -41,11 +41,17 @@ constexpr size_t BLOCK_HEADER_LENGTH = sizeof(BlockHeader);
 
 template <typename Config>
 class JSMallocBase {
+private:
+  size_t _internal_fragmentation = 0;
+  size_t _allocated = 0;
+
 public:
   JSMallocBase(void *pool, size_t pool_size, bool start_full);
 
   void reset(bool initial_block_allocated = true);
   void *allocate(size_t size);
+
+  double internal_fragmentation();
 
   // TODO: Should be removed. Used for debugging.
   void print_phys_blks();
