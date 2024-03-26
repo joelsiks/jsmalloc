@@ -138,7 +138,7 @@ void JSMallocBase<Config>::print_phys_blks() {
 
 template<typename Config>
 void JSMallocBase<Config>::print_free_lists() {
-  for(size_t i = 0; i < 64; i++) {
+  for(size_t i = 0; i < 32; i++) {
     if((_fl_bitmap & (1UL << i)) == 0) {
       continue;
     }
@@ -157,7 +157,6 @@ void JSMallocBase<Config>::print_free_lists() {
         }
         std::cout << "END" << std::endl;
       }
-
     } else {
       printf("FREE-LIST (%02ld): ", i);
       BlockHeader *current = _blocks[i];
@@ -241,8 +240,13 @@ BlockHeader *JSMallocBase<Config>::find_block(size_t size) {
 template<typename Config>
 BlockHeader *JSMallocBase<Config>::coalesce_blocks(BlockHeader *blk1, BlockHeader *blk2) {
   size_t blk2_size = blk2->get_size();
-  remove_block(blk1, get_mapping(blk1->get_size()));
-  remove_block(blk2, get_mapping(blk2_size));
+  if(blk1->is_free()) {
+    remove_block(blk1, get_mapping(blk1->get_size()));
+  }
+
+  if(blk2->is_free()) {
+    remove_block(blk2, get_mapping(blk2_size));
+  }
 
   bool blk2_is_last = blk2->is_last();
 
