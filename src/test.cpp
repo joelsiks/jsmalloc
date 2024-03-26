@@ -79,6 +79,36 @@ void free_range_test() {
   //t.print_phys_blks();
 }
 
+void coalescing_test() {
+  const size_t pool_size = 1024;
+  uint8_t *pool = mmap_allocate(pool_size);
+  JSMalloc alloc(pool, pool_size);
+
+  void *obj1 = alloc.allocate(32);
+  memset(obj1, 0, 32);
+
+  void *obj2 = alloc.allocate(32);
+  memset(obj2, 0, 32);
+
+  void *obj3 = alloc.allocate(32);
+  memset(obj3, 0, 32);
+  
+  void *obj4 = alloc.allocate(32);
+  memset(obj4, 0, 32);
+
+  alloc.print_phys_blks();
+  //alloc.print_free_lists();
+  std::cout << "---\n";
+
+  alloc.free(obj1);
+  alloc.print_free_lists();
+
+  std::cout << "---\n";
+  alloc.free(obj4);
+  alloc.print_phys_blks();
+  alloc.print_free_lists();
+}
+
 void deferred_coalescing_test() {
   const size_t pool_size = 16 * 16 + 8;
   uint8_t *pool = mmap_allocate(pool_size);
@@ -216,14 +246,15 @@ void rdtsc_test() {
 }
 
 int main() {
-  basic_test();
-  constructor_test();
-  free_range_test();
-  deferred_coalescing_test();
-  CUnit_initialize_test();
-  optimized_test();
-  benchmark_comparison_untimed();
-  benchmark_comparison();
-  zero_test();
-  rdtsc_test();
+  //basic_test();
+  //constructor_test();
+  //free_range_test();
+  coalescing_test();
+  //deferred_coalescing_test();
+  //CUnit_initialize_test();
+  //optimized_test();
+  //benchmark_comparison_untimed();
+  //benchmark_comparison();
+  //zero_test();
+  //rdtsc_test();
 }

@@ -1,6 +1,7 @@
 .vscode
 benchmark
 build
+perf
 test
 *.o
 *.so
@@ -9,3 +10,4 @@ test
 *.a
 
 distributions/
+benchmark/

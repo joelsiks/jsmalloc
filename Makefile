@@ -8,9 +8,10 @@ BUILD_DIR = build
 # Files
 SRC_FILES = $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_FILES = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(SRC_FILES))
-TEST_OBJ_FILES = $(filter-out $(BUILD_DIR)/MallocWrapper.o $(BUILD_DIR)/BenchmarkThreads.o, $(OBJ_FILES))
-BENCHMARK_OBJ_FILES = $(filter-out $(BUILD_DIR)/MallocWrapper.o $(BUILD_DIR)/test.o, $(OBJ_FILES))
-LIB_OBJ_FILES = $(filter-out $(BUILD_DIR)/test.o $(BUILD_DIR)/BenchmarkThreads.o, $(OBJ_FILES))
+TEST_OBJ_FILES = $(filter-out $(BUILD_DIR)/MallocWrapper.o $(BUILD_DIR)/BenchmarkThreads.o $(BUILD_DIR)/BenchmarkPerformance.o, $(OBJ_FILES))
+BENCHMARK_OBJ_FILES = $(filter-out $(BUILD_DIR)/MallocWrapper.o $(BUILD_DIR)/test.o $(BUILD_DIR)/BenchmarkPerformance.o, $(OBJ_FILES))
+PERF_OBJ_FILES = $(filter-out $(BUILD_DIR)/MallocWrapper.o $(BUILD_DIR)/test.o $(BUILD_DIR)/BenchmarkThreads.o, $(OBJ_FILES))
+LIB_OBJ_FILES = $(filter-out $(BUILD_DIR)/test.o $(BUILD_DIR)/BenchmarkThreads.o $(BUILD_DIR)/BenchmarkPerformance.o, $(OBJ_FILES))
 SHARED_LIB = libjsmalloc.so
 
 # Targets
@@ -21,6 +22,9 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 
 benchmark: prep $(BENCHMARK_OBJ_FILES)
 	$(CXX) $(CXXFLAGS) $(BENCHMARK_OBJ_FILES) -o benchmark
+
+perf: prep $(PERF_OBJ_FILES)
+	$(CXX) $(CXXFLAGS) $(PERF_OBJ_FILES) -o perf
 
 test: prep $(TEST_OBJ_FILES)
 	$(CXX) $(CXXFLAGS) $(TEST_OBJ_FILES) -o test
@@ -37,5 +41,5 @@ format:
 	xargs clang-format --style=file -i 
 
 clean:
-	rm -rf $(BUILD_DIR) test benchmark $(SHARED_LIB) *.out
+	rm -rf $(BUILD_DIR) test benchmark perf $(SHARED_LIB) *.out
 
