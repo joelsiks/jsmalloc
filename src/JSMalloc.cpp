@@ -68,13 +68,15 @@ void JSMallocBase<Config>::reset(bool initial_block_allocated) {
   _blocks[_num_lists] = nullptr;
 
   BlockHeader *blk = reinterpret_cast<BlockHeader *>(_block_start);
-  blk->size = _pool_size - _block_header_length;
+
   if(!Config::DeferredCoalescing) {
     blk->prev_phys_block = nullptr;
   }
 
   if(!initial_block_allocated) {
+    blk->size = _pool_size - _block_header_length;
     insert_block(blk);
+
   } else if(_block_header_length > 0) {
       blk->mark_used();
   }
