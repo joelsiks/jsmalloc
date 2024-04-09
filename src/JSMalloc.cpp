@@ -88,10 +88,15 @@ void JSMallocBase<Config>::reset(bool initial_block_allocated) {
 
 template<typename Config>
 void *JSMallocBase<Config>::allocate(size_t size) {
+  return debug_allocate(size).addr;
+}
+
+template<typename Config>
+JSMallocAlloc JSMallocBase<Config>::debug_allocate(size_t size) {
   BlockHeader *blk = find_block(size);
 
   if(blk == nullptr) {
-    return nullptr;
+    return {nullptr, 0};
   } 
 
   size_t allocated_size = blk->get_size();
@@ -103,7 +108,7 @@ void *JSMallocBase<Config>::allocate(size_t size) {
   // TODO: This might not be necessary if everything is already aligned, and
   // should take into account that the block size might be smaller than expected.
   uintptr_t blk_start = (uintptr_t)blk + _block_header_length;
-  return (void *)blk_start;
+  return {(void *)blk_start, allocated_size};
 }
 
 template<typename Config>

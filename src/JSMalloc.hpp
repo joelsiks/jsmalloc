@@ -37,6 +37,11 @@ public:
 
 struct Mapping;
 
+struct JSMallocAlloc {
+  void *addr;
+  size_t size;
+};
+
 constexpr size_t BLOCK_HEADER_LENGTH_SMALL = 0;
 constexpr size_t BLOCK_HEADER_LENGTH = sizeof(BlockHeader);
 
@@ -51,6 +56,7 @@ public:
 
   void reset(bool initial_block_allocated = true);
   void *allocate(size_t size);
+  JSMallocAlloc debug_allocate(size_t size);
 
   double internal_fragmentation();
 
