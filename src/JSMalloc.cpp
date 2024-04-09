@@ -173,6 +173,11 @@ void JSMallocBase<Config>::print_free_lists() {
 }
 
 template<typename Config>
+uint64_t JSMallocBase<Config>::get_fl_bitmap() {
+  return _fl_bitmap;
+}
+
+template<typename Config>
 void JSMallocBase<Config>::initialize(void *pool, size_t pool_size, bool start_full) {
   uintptr_t aligned_initial_block = JSMallocUtil::align_up((uintptr_t)pool, _alignment);
   _block_start = aligned_initial_block;
@@ -637,17 +642,53 @@ void JSMallocZ::free_range(void *start_ptr, size_t size) {
   free(start_ptr, size);
 }
 
-void JSMallocZ::aggregate() {
+BlockHeader *JSMallocZ::get_next_phys_block(BlockHeader *blk, std::map<void *, size_t> &allocmap) {
+  if(blk == nullptr) {
+    return nullptr;
+  }
+
+  size_t step;
+  if(allocmap.find(blk) == allocmap.end()) {
+    step = blk->get_size();
+  } else {
+    step = allocmap.find(blk)->second;
+  }
+
+  uintptr_t next = (uintptr_t)blk + step;
+  return ptr_in_pool(next)
+    ? (BlockHeader *)next
+    : nullptr;
+}
+
+void JSMallocZ::coalesce(std::map<void *, size_t> &allocmap) {
+  // 1. Clear bitmap and free-lists.
+  _fl_bitmap = 0;
+  for(int i = 0; i < _num_lists + 1; i++) {
+    _blocks[i] = nullptr;
+  }
+
   BlockHeader *current_blk = reinterpret_cast<BlockHeader *>(_block_start);
 
   while(current_blk != nullptr) {
-    BlockHeader *next_blk = get_next_phys_block(current_blk);
+    bool current_free = (allocmap.find(current_blk) == allocmap.end());
 
-    if(next_blk != nullptr && current_blk->is_free() && next_blk->is_free()) {
-      current_blk = JSMallocBase::coalesce_blocks(current_blk, next_blk);
+    BlockHeader *next_blk = get_next_phys_block(current_blk, allocmap);
+    bool next_free = (allocmap.find(next_blk) == allocmap.end());
+
+    if(current_free) {
+      // Coalesce with all following blocks that are free.
+      while(next_free) {
+        size_t next_size = next_blk->size;
+        current_blk->size += next_size;
+        next_blk = get_next_phys_block(next_blk, allocmap);
+        next_free = (next_blk != nullptr) && (allocmap.find(next_blk) == allocmap.end());
+      }
+
+      // Only insert the current block (which has been coalesced with all free
+      // next blocks) if it is free.
       insert_block(current_blk);
-    } else {
-      current_blk = next_blk;
     }
+
+    current_blk = next_blk;
   }
 }

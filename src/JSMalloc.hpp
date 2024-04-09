@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <mutex>
 
 class BlockHeader {
@@ -57,6 +58,7 @@ public:
   void print_phys_blks();
   void print_blk(BlockHeader *blk);
   void print_free_lists();
+  uint64_t get_fl_bitmap();
 
 protected:
   JSMallocBase() {}
@@ -166,7 +168,10 @@ public:
   void free_range(void *start_ptr, size_t size);
 
   // Manually trigger block coalescing.
-  void aggregate();
+  void coalesce(std::map<void *, size_t> &allocmap);
+
+private:
+  BlockHeader *get_next_phys_block(BlockHeader *blk, std::map<void *, size_t> &allocmap);
 };
 
 #endif // JSMALLOC_HPP

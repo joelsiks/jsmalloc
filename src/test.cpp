@@ -13,6 +13,13 @@
 
 #include "JSMalloc.hpp"
 
+static void print_bits(uint64_t n) {
+    for (int i = 63; i >= 0; --i) {
+        std::cout << ((n >> i) & 1);
+    }
+    std::cout << std::endl;
+}
+
 uint8_t *mmap_allocate(size_t pool_size) {
   return static_cast<uint8_t *>(mmap(nullptr, pool_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 }
@@ -146,7 +153,7 @@ void deferred_coalescing_test() {
   t.print_phys_blks();
   t.print_free_lists();
 
-  t.aggregate();
+  //t.aggregate();
 
   std::cout << "------------------\n";
   t.print_phys_blks();
@@ -245,11 +252,33 @@ void rdtsc_test() {
   std::cout << "allocate(0) cycles: " << avg / iters << std::endl;
 }
 
+void aggregate_test() {
+  size_t pool_size = 1024 * 10000;
+  uint8_t *pool = mmap_allocate(pool_size);
+  JSMallocZ alloc(pool, pool_size, false);
+  std::map<void *, size_t> allocmap;
+
+  void *a = alloc.allocate(16);
+  void *b = alloc.allocate(64);
+  void *c = alloc.allocate(128);
+  void *d = alloc.allocate(16);
+  print_bits(alloc.get_fl_bitmap());
+
+  alloc.free(a, 16);
+  alloc.free(b, 64);
+  allocmap[c] = 128;
+  alloc.free(d, 16);
+  print_bits(alloc.get_fl_bitmap());
+
+  alloc.coalesce(allocmap);
+  print_bits(alloc.get_fl_bitmap());
+}
+
 int main() {
   //basic_test();
   //constructor_test();
   //free_range_test();
-  coalescing_test();
+  //coalescing_test();
   //deferred_coalescing_test();
   //CUnit_initialize_test();
   //optimized_test();
@@ -257,4 +286,5 @@ int main() {
   //benchmark_comparison();
   //zero_test();
   //rdtsc_test();
+  aggregate_test();
 }
