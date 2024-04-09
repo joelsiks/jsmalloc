@@ -670,7 +670,7 @@ BlockHeader *JSMallocZ::get_next_phys_block(BlockHeader *blk, std::map<void *, s
 void JSMallocZ::coalesce(std::map<void *, size_t> &allocmap) {
   // 1. Clear bitmap and free-lists.
   _fl_bitmap = 0;
-  for(int i = 0; i < _num_lists + 1; i++) {
+  for(size_t i = 0; i < _num_lists + 1; i++) {
     _blocks[i] = nullptr;
   }
 
@@ -678,16 +678,20 @@ void JSMallocZ::coalesce(std::map<void *, size_t> &allocmap) {
 
   while(current_blk != nullptr) {
     bool current_free = (allocmap.find(current_blk) == allocmap.end());
-
     BlockHeader *next_blk = get_next_phys_block(current_blk, allocmap);
-    bool next_free = (next_blk != nullptr) && (allocmap.find(next_blk) == allocmap.end());
 
     if(current_free) {
+      bool next_free = (next_blk != nullptr) && (allocmap.find(next_blk) == allocmap.end());
       // Coalesce with all following blocks that are free.
       while(next_free) {
-        size_t next_size = next_blk->size;
-        current_blk->size += next_size;
-        next_blk = get_next_phys_block(next_blk, allocmap);
+        current_blk->size += next_blk->size;
+        BlockHeader *new_next_blk = get_next_phys_block(next_blk, allocmap);
+
+        if(new_next_blk == next_blk) {
+          break;
+        }
+
+        next_blk = new_next_blk;
         next_free = (next_blk != nullptr) && (allocmap.find(next_blk) == allocmap.end());
       }
 
