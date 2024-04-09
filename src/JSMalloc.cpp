@@ -680,7 +680,7 @@ void JSMallocZ::coalesce(std::map<void *, size_t> &allocmap) {
     bool current_free = (allocmap.find(current_blk) == allocmap.end());
 
     BlockHeader *next_blk = get_next_phys_block(current_blk, allocmap);
-    bool next_free = (allocmap.find(next_blk) == allocmap.end());
+    bool next_free = (next_blk != nullptr) && (allocmap.find(next_blk) == allocmap.end());
 
     if(current_free) {
       // Coalesce with all following blocks that are free.
